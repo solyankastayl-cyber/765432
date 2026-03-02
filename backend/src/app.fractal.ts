@@ -32,6 +32,7 @@ import { registerSpxUnifiedRoutes } from './modules/fractal/api/fractal.spx.rout
 import { registerForwardAdminRoutes } from './modules/forward/api/forward.admin.routes.js';
 import { registerDxyModule } from './modules/dxy/index.js';
 import modelConfigRoutes from './modules/fractal/config/model-config.routes.js';
+import lifecycleAdminRoutes from './modules/fractal/lifecycle/lifecycle.admin.routes.js';
 import { getMongoDb } from './db/mongoose.js';
 import fs from 'fs';
 import path from 'path';
@@ -509,6 +510,13 @@ async function main() {
   console.log('[Fractal] Registering Model Config routes (P0)...');
   await app.register(modelConfigRoutes);
   console.log('[Fractal] ✅ Model Config routes registered');
+
+  // ═══════════════════════════════════════════════════════════════
+  // P1-A + P2: LIFECYCLE ADMIN ROUTES — Version management & snapshots
+  // ═══════════════════════════════════════════════════════════════
+  console.log('[Fractal] Registering Lifecycle Admin routes (P1-A + P2)...');
+  await app.register(lifecycleAdminRoutes);
+  console.log('[Fractal] ✅ Lifecycle Admin routes registered');
   
   // ═══════════════════════════════════════════════════════════════
   // INDEX ENGINE V2 — Unified API for all indices

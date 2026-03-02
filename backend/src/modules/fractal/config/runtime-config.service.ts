@@ -109,6 +109,7 @@ export async function getMergedHorizonConfig(
 
 /**
  * Debug endpoint data
+ * P1-A: Added activeVersion from lifecycle
  */
 export async function getRuntimeDebugInfo(asset: AssetKey): Promise<{
   asset: AssetKey;
@@ -123,8 +124,21 @@ export async function getRuntimeDebugInfo(asset: AssetKey): Promise<{
   tierWeights?: Record<string, number>;
   version?: string;
   updatedAt?: string;
+  activeVersion?: string;
+  activeConfigHash?: string;
+  promotedAt?: string;
 }> {
   const cfg = await getRuntimeEngineConfig(asset);
+  
+  // P1-A: Get lifecycle state for activeVersion
+  let lifecycleState: any = null;
+  try {
+    const { LifecycleStore } = await import('../lifecycle/lifecycle.store.js');
+    lifecycleState = await LifecycleStore.getState(asset);
+  } catch (err) {
+    // Lifecycle store may not exist yet
+  }
+  
   return {
     asset,
     configSource: cfg.source,
@@ -138,5 +152,9 @@ export async function getRuntimeDebugInfo(asset: AssetKey): Promise<{
     tierWeights: cfg.tierWeights,
     version: cfg.version,
     updatedAt: cfg.updatedAt?.toISOString(),
+    // P1-A: Lifecycle info
+    activeVersion: lifecycleState?.activeVersion,
+    activeConfigHash: lifecycleState?.activeConfigHash,
+    promotedAt: lifecycleState?.promotedAt?.toISOString(),
   };
 }
