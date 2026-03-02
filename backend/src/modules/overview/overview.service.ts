@@ -273,11 +273,19 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
     
     if (snapshotData.ok && snapshotData.snapshots?.length > 0) {
       const snapshot = snapshotData.snapshots[0];
-      const predictedCount = snapshot.series.length - snapshot.anchorIndex;
       
-      // Check if snapshot has sufficient predicted points for the horizon
-      // We expect at least 50% of horizonDays as predicted points
-      const minPredicted = Math.floor(horizonDays * 0.5);
+      // CRITICAL: Verify snapshot asset matches requested asset
+      // Prevents using wrong asset's snapshot (e.g., SPX snapshot for DXY request)
+      const snapshotAsset = snapshot.asset?.toUpperCase();
+      if (snapshotAsset && snapshotAsset !== assetUpper) {
+        console.warn(`[Overview] Snapshot asset mismatch: requested ${assetUpper}, got ${snapshotAsset}. Skipping snapshot.`);
+        // Fall through to terminal endpoint
+      } else {
+        const predictedCount = snapshot.series.length - snapshot.anchorIndex;
+        
+        // Check if snapshot has sufficient predicted points for the horizon
+        // We expect at least 50% of horizonDays as predicted points
+        const minPredicted = Math.floor(horizonDays * 0.5);
       
       if (predictedCount >= minPredicted) {
         // Convert snapshot to terminal format for compatibility
