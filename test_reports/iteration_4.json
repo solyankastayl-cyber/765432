@@ -1,0 +1,44 @@
+{
+  "summary": "Verified bug fix for BTC Overview vs BTC Fractals prediction discrepancy. Both now show identical values ($151,866.95 for 365d). BTC is now default asset on Overview page, and Overview uses crossAsset view for BTC instead of hybrid.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "BTC 365d on Overview shows $151,866.95 - matches BTC Fractals crossAsset value",
+    "BTC is default asset on Overview page (opens first)",
+    "Bitcoin tab is first/leftmost in asset selector",
+    "Overview uses crossAsset view for BTC (line 542: asset === 'dxy' ? 'hybrid' : 'crossAsset')",
+    "SPX on Overview works correctly - shows S&P 500 data with proper range",
+    "DXY on Overview works correctly - shows Dollar Index data with proper range (111-123)",
+    "Asset tab switching works correctly",
+    "Horizon selector works correctly (7d, 14d, 30d, 90d, 180d, 365d)",
+    "Live prediction chart loads and displays data correctly",
+    "API verification: /api/ui/overview?asset=btc&horizon=365 returns $151,866.95",
+    "API verification: /api/prediction/snapshots?asset=BTC&view=crossAsset&horizon=365 returns $151,866.95"
+  ],
+  "test_report_links": [
+    "/app/test_reports/iteration_3.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (API endpoints return correct data)",
+    "frontend": "100% (All tested features working)"
+  },
+  "seed_data_creation": "None - existing snapshots used",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fix verified: BTC Overview now uses crossAsset view (not hybrid), showing same prediction as BTC Fractals page. Both show $151,866.95 for 365d horizon. BTC is now default asset on Overview.",
+  "verified_fixes": {
+    "btc_default_asset": "VERIFIED - BTC opens first on Overview, Bitcoin tab is leftmost",
+    "btc_crossasset_view": "VERIFIED - Line 542 of OverviewPage.jsx: predictionView = asset === 'dxy' ? 'hybrid' : 'crossAsset'",
+    "prediction_consistency": "VERIFIED - Overview and BTC Fractals both show $151,866.95 for BTC 365d"
+  }
+}

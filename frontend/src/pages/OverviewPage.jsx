@@ -486,7 +486,7 @@ export default function OverviewPage() {
   const getInitialAsset = () => {
     const params = new URLSearchParams(window.location.search);
     const urlAsset = params.get('asset')?.toLowerCase();
-    return ['spx', 'btc', 'dxy'].includes(urlAsset) ? urlAsset : 'spx';
+    return ['spx', 'btc', 'dxy'].includes(urlAsset) ? urlAsset : 'btc';
   };
   
   const getInitialHorizon = () => {
@@ -527,10 +527,10 @@ export default function OverviewPage() {
     fetchData();
   }, [fetchData]);
   
-  // Asset selector tabs
+  // Asset selector tabs (BTC first as default)
   const assetTabs = [
-    { key: 'spx', label: 'S&P 500', icon: '📊' },
     { key: 'btc', label: 'Bitcoin', icon: '₿' },
+    { key: 'spx', label: 'S&P 500', icon: '📊' },
     { key: 'dxy', label: 'Dollar', icon: '💵' },
   ];
   
@@ -538,7 +538,8 @@ export default function OverviewPage() {
   const horizonOptions = [7, 14, 30, 90, 180, 365];
   
   // View mapping for prediction chart
-  const predictionView = asset === 'dxy' ? 'hybrid' : asset === 'spx' ? 'crossAsset' : 'hybrid';
+  // V1 LOCKED: BTC must use crossAsset, SPX uses crossAsset, DXY uses hybrid
+  const predictionView = asset === 'dxy' ? 'hybrid' : 'crossAsset';
   
   return (
     <div className="min-h-screen bg-gray-50" data-testid="overview-page">
