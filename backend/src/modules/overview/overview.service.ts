@@ -377,18 +377,49 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
     let predicted: Array<{t: string, v: number}> = [];
     let currentPrice = actual.length > 0 ? actual[actual.length - 1].v : 0;
     
-    if (asset === 'btc' && data.focusPack?.forecast?.path) {
+    if (asset === 'btc' && data.focusPack?.forecast) {
       const fc = data.focusPack.forecast;
+      const unifiedPath = fc.unifiedPath || {};
       const startTs = new Date(fc.startTs || Date.now());
-      currentPrice = fc.currentPrice || currentPrice;
+      currentPrice = fc.currentPrice || unifiedPath.anchorPrice || currentPrice;
+      
+      // V1 LOCKED FIX: Use syntheticPath + replayPath to calculate hybridPath
+      // This matches BTC Fractals page "BTC Adjusted" line (smooth curve without peak)
+      // Instead of forecast.path which has artificial peak at $180K
+      const syntheticPath = unifiedPath.syntheticPath || [];
+      const replayPath = unifiedPath.replayPath || [];
+      const replayWeight = 0.5; // Same as frontend
       
       predicted = [{ t: asOfDate, v: currentPrice }];
-      for (let i = 0; i < fc.path.length; i++) {
-        const d = new Date(startTs);
-        d.setDate(d.getDate() + i + 1);
-        const dateStr = d.toISOString().split('T')[0];
-        if (dateStr > asOfDate) {
-          predicted.push({ t: dateStr, v: fc.path[i] });
+      
+      if (syntheticPath.length > 0) {
+        // Calculate hybridPath like frontend does in FractalHybridChart.jsx
+        for (let i = 0; i < syntheticPath.length; i++) {
+          const sp = syntheticPath[i];
+          const rp = replayPath[i] || sp;
+          const synPrice = sp.price || 0;
+          const repPrice = rp.price || synPrice;
+          const hybridPrice = (1 - replayWeight) * synPrice + replayWeight * repPrice;
+          
+          const d = new Date(startTs);
+          d.setDate(d.getDate() + i + 1);
+          const dateStr = d.toISOString().split('T')[0];
+          
+          if (dateStr > asOfDate) {
+            predicted.push({ t: dateStr, v: hybridPrice });
+          }
+        }
+        console.log(`[Overview] BTC using hybridPath (syntheticPath+replayPath): ${predicted.length} points, last=${predicted[predicted.length-1]?.v?.toFixed(2)}`);
+      } else {
+        // Fallback to path if no unifiedPath
+        console.warn('[Overview] BTC: No unifiedPath, falling back to forecast.path (may have peak)');
+        for (let i = 0; i < (fc.path || []).length; i++) {
+          const d = new Date(startTs);
+          d.setDate(d.getDate() + i + 1);
+          const dateStr = d.toISOString().split('T')[0];
+          if (dateStr > asOfDate) {
+            predicted.push({ t: dateStr, v: fc.path[i] });
+          }
         }
       }
     } else if (asset === 'spx' && data.data?.forecast?.path) {
@@ -892,26 +923,55 @@ export async function registerOverviewRoutes(app: FastifyInstance): Promise<void
       }
       
       // 3. Build series [history] -> anchor -> [forecast]
+      // V1 LOCKED FIX: Use syntheticPath + replayPath to calculate hybridPath
+      // This matches BTC Fractals page "BTC Adjusted" line (smooth curve without peak)
       const FIXED_HISTORY_START = '2026-01-01';
       const asOfDate = new Date().toISOString().split('T')[0];
-      const asOfPrice = forecast.currentPrice || candles[candles.length - 1]?.c || 0;
+      const unifiedPath = forecast.unifiedPath || {};
+      const asOfPrice = forecast.currentPrice || unifiedPath.anchorPrice || candles[candles.length - 1]?.c || 0;
       
       // History: from FIXED_HISTORY_START to yesterday
       const history: Array<{t: string, v: number}> = candles
         .filter((c: any) => c.t >= FIXED_HISTORY_START && c.t < asOfDate)
         .map((c: any) => ({ t: c.t, v: c.c }));
       
-      // Forecast: from tomorrow onwards
+      // Forecast: Calculate hybridPath from syntheticPath + replayPath (same as frontend)
+      const syntheticPath = unifiedPath.syntheticPath || [];
+      const replayPath = unifiedPath.replayPath || [];
+      const replayWeight = 0.5;
+      
       const forecastSeries: Array<{t: string, v: number}> = [];
       const startTs = forecast.startTs ? new Date(forecast.startTs) : new Date();
       
-      for (let i = 0; i < forecast.path.length; i++) {
-        const d = new Date(startTs);
-        d.setDate(d.getDate() + i);
-        const dateStr = d.toISOString().split('T')[0];
-        
-        if (dateStr > asOfDate) {
-          forecastSeries.push({ t: dateStr, v: forecast.path[i] });
+      if (syntheticPath.length > 0) {
+        // Calculate hybridPath like frontend does
+        for (let i = 0; i < syntheticPath.length; i++) {
+          const sp = syntheticPath[i];
+          const rp = replayPath[i] || sp;
+          const synPrice = sp.price || 0;
+          const repPrice = rp.price || synPrice;
+          const hybridPrice = (1 - replayWeight) * synPrice + replayWeight * repPrice;
+          
+          const d = new Date(startTs);
+          d.setDate(d.getDate() + i);
+          const dateStr = d.toISOString().split('T')[0];
+          
+          if (dateStr > asOfDate) {
+            forecastSeries.push({ t: dateStr, v: hybridPrice });
+          }
+        }
+        console.log(`[V1 LOCKED] BTC using hybridPath: ${forecastSeries.length} points, last=${forecastSeries[forecastSeries.length-1]?.v?.toFixed(2)}`);
+      } else {
+        // Fallback to forecast.path if no unifiedPath (may have peak)
+        console.warn('[V1 LOCKED] BTC: No unifiedPath, using forecast.path (may have peak)');
+        for (let i = 0; i < (forecast.path || []).length; i++) {
+          const d = new Date(startTs);
+          d.setDate(d.getDate() + i);
+          const dateStr = d.toISOString().split('T')[0];
+          
+          if (dateStr > asOfDate) {
+            forecastSeries.push({ t: dateStr, v: forecast.path[i] });
+          }
         }
       }
       
