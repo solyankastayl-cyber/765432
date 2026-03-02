@@ -5,17 +5,27 @@
  */
 
 import { FastifyInstance, FastifyRequest } from 'fastify';
-import { promoteModel, resolveSnapshots, getLifecycleStatus } from './lifecycle.service.js';
+import { promoteModel, resolveSnapshots, getLifecycleStatus, rollbackModel, forceResolveSnapshots } from './lifecycle.service.js';
 import { LifecycleStore } from './lifecycle.store.js';
 import { AssetKey } from './lifecycle.contract.js';
 
 interface AssetQuery {
   asset?: string;
+  force?: string;
 }
 
 interface PromoteBody {
   asset?: string;
   user?: string;
+  note?: string;
+}
+
+interface RollbackBody {
+  asset?: string;
+  toVersion?: string;
+  steps?: number;
+  user?: string;
+  note?: string;
 }
 
 export async function lifecycleAdminRoutes(fastify: FastifyInstance): Promise<void> {
@@ -67,18 +77,46 @@ export async function lifecycleAdminRoutes(fastify: FastifyInstance): Promise<vo
    * POST /api/fractal/v2.1/admin/lifecycle/resolve
    * 
    * P2: Resolve matured snapshots and create outcomes
+   * Use force=1 query param for testing (resolves regardless of time)
    */
   fastify.post('/api/fractal/v2.1/admin/lifecycle/resolve', async (
     request: FastifyRequest<{ Querystring: AssetQuery }>
   ) => {
     const asset = request.query.asset as AssetKey | undefined;
+    const force = request.query.force === '1' || request.query.force === 'true';
     
     try {
-      const result = await resolveSnapshots(asset);
+      const result = force ? 
+        await forceResolveSnapshots(asset) : 
+        await resolveSnapshots(asset);
       return {
         ok: true,
+        forced: force,
         ...result,
       };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * POST /api/fractal/v2.1/admin/lifecycle/rollback
+   * 
+   * P2.5: Rollback to previous version
+   * Does NOT delete data - only changes activeVersion and restores config
+   */
+  fastify.post('/api/fractal/v2.1/admin/lifecycle/rollback', async (
+    request: FastifyRequest<{ Body: RollbackBody }>
+  ) => {
+    const body = request.body || {};
+    const asset = (body.asset ?? 'BTC') as AssetKey;
+    const toVersion = body.toVersion;
+    const steps = body.steps;
+    const user = body.user ?? 'admin';
+    
+    try {
+      const result = await rollbackModel(asset, toVersion, steps, user);
+      return result;
     } catch (err: any) {
       return { ok: false, error: err.message };
     }

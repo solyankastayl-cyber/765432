@@ -34,6 +34,7 @@ export interface LifecycleEventDoc {
   createdAt: Date;
   createdBy?: string;
   notes?: string;
+  fromVersion?: string; // For rollback events
 }
 
 /**

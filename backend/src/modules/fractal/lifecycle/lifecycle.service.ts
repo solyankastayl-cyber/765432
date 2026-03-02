@@ -233,3 +233,210 @@ export async function getLifecycleStatus(asset: AssetKey): Promise<{
 
   return { state, events, snapshots, outcomeStats };
 }
+
+/**
+ * P2.5: Rollback to previous version
+ * 
+ * Does NOT delete snapshots/outcomes - only changes activeVersion
+ * and restores config from event snapshot.
+ */
+export async function rollbackModel(
+  asset: AssetKey,
+  toVersion?: string,
+  steps?: number,
+  user?: string
+): Promise<{ ok: boolean; fromVersion?: string; toVersion?: string; error?: string }> {
+  try {
+    // Get current state
+    const currentState = await LifecycleStore.getState(asset);
+    if (!currentState) {
+      return { ok: false, error: 'No lifecycle state found for asset' };
+    }
+
+    const fromVersion = currentState.activeVersion;
+
+    // Get all events to find target version
+    const events = await LifecycleStore.getEvents(asset, 100);
+    const promoteEvents = events.filter(e => e.type === 'PROMOTE');
+
+    if (promoteEvents.length < 2) {
+      return { ok: false, error: 'Not enough versions to rollback' };
+    }
+
+    let targetVersion: string;
+    let targetEvent: any;
+
+    if (toVersion) {
+      // Rollback to specific version
+      targetEvent = promoteEvents.find(e => e.version === toVersion);
+      if (!targetEvent) {
+        return { ok: false, error: `Version ${toVersion} not found` };
+      }
+      targetVersion = toVersion;
+    } else if (steps) {
+      // Rollback N steps back
+      const currentIdx = promoteEvents.findIndex(e => e.version === fromVersion);
+      const targetIdx = currentIdx + steps; // events sorted desc, so +steps goes back
+      if (targetIdx >= promoteEvents.length) {
+        return { ok: false, error: `Cannot rollback ${steps} steps, only ${promoteEvents.length - currentIdx - 1} available` };
+      }
+      targetEvent = promoteEvents[targetIdx];
+      targetVersion = targetEvent.version;
+    } else {
+      // Default: rollback 1 step
+      const currentIdx = promoteEvents.findIndex(e => e.version === fromVersion);
+      if (currentIdx + 1 >= promoteEvents.length) {
+        return { ok: false, error: 'No previous version to rollback to' };
+      }
+      targetEvent = promoteEvents[currentIdx + 1];
+      targetVersion = targetEvent.version;
+    }
+
+    if (targetVersion === fromVersion) {
+      return { ok: true, fromVersion, toVersion: targetVersion, error: 'Already at target version (no-op)' };
+    }
+
+    console.log(`[Lifecycle] Rolling back ${asset} from ${fromVersion} to ${targetVersion}`);
+
+    // Restore config from event snapshot
+    if (targetEvent.configSnapshot) {
+      await ModelConfigStore.upsert(asset, {
+        windowLen: targetEvent.configSnapshot.windowLen,
+        topK: targetEvent.configSnapshot.topK,
+        similarityMode: targetEvent.configSnapshot.similarityMode,
+        minGapDays: targetEvent.configSnapshot.minGapDays,
+        ageDecayLambda: targetEvent.configSnapshot.ageDecayLambda,
+        regimeConditioning: targetEvent.configSnapshot.regimeConditioning,
+        horizonWeights: targetEvent.configSnapshot.horizonWeights,
+        tierWeights: targetEvent.configSnapshot.tierWeights,
+        version: targetVersion,
+      }, `rollback:${user || 'system'}`);
+    }
+
+    // Insert rollback event
+    await LifecycleStore.insertEvent({
+      asset,
+      version: targetVersion,
+      type: 'ROLLBACK',
+      configHash: targetEvent.configHash,
+      configSnapshot: targetEvent.configSnapshot,
+      createdAt: new Date(),
+      createdBy: user || 'system',
+      notes: `Rollback from ${fromVersion} to ${targetVersion}`,
+    });
+
+    // Update lifecycle state
+    await LifecycleStore.setState({
+      asset,
+      activeVersion: targetVersion,
+      activeConfigHash: targetEvent.configHash,
+      status: 'ACTIVE',
+      promotedAt: new Date(),
+      promotedBy: `rollback:${user || 'system'}`,
+    });
+
+    console.log(`[Lifecycle] Rollback complete: ${fromVersion} → ${targetVersion}`);
+
+    return { ok: true, fromVersion, toVersion: targetVersion };
+  } catch (err: any) {
+    console.error('[Lifecycle] Rollback error:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * P2.5: Force resolve snapshots (for testing)
+ * 
+ * Resolves ALL unresolved snapshots regardless of time elapsed.
+ * Uses mock realized returns based on horizon.
+ */
+export async function forceResolveSnapshots(
+  asset?: AssetKey
+): Promise<{ resolved: number; outcomes: number; errors: string[] }> {
+  const errors: string[] = [];
+  let resolved = 0;
+  let outcomes = 0;
+
+  try {
+    const unresolved = await LifecycleStore.getUnresolvedSnapshots(asset);
+
+    console.log(`[Lifecycle] Force resolving ${unresolved.length} snapshots`);
+
+    for (const snapshot of unresolved) {
+      try {
+        // Get current price
+        const canonicalStore = new CanonicalStore();
+        const candles = await canonicalStore.getAll(snapshot.asset, '1d');
+        
+        if (!candles || candles.length === 0) {
+          errors.push(`No candles for ${snapshot.asset}`);
+          continue;
+        }
+
+        const currentPrice = candles[candles.length - 1].ohlcv.c;
+        const asOfPrice = snapshot.asOfPrice;
+
+        if (!asOfPrice || asOfPrice === 0) {
+          errors.push(`Invalid asOfPrice for ${snapshot.asset}/${snapshot.version}/${snapshot.horizon}`);
+          continue;
+        }
+
+        // Calculate actual returns
+        const realizedReturn = (currentPrice - asOfPrice) / asOfPrice;
+        const expectedReturn = snapshot.forecastPath.length > 0 ?
+          (snapshot.forecastPath[snapshot.forecastPath.length - 1] - asOfPrice) / asOfPrice : 0;
+        const error = realizedReturn - expectedReturn;
+
+        // Resolve snapshot
+        await LifecycleStore.resolveSnapshot(
+          snapshot.asset,
+          snapshot.version,
+          snapshot.horizon,
+          { realizedReturn, expectedReturn, error }
+        );
+
+        resolved++;
+
+        // Create decision outcome
+        const predictedDirection = expectedReturn > 0.01 ? 'BULL' : expectedReturn < -0.01 ? 'BEAR' : 'NEUTRAL';
+        const actualDirection = realizedReturn > 0.01 ? 'BULL' : realizedReturn < -0.01 ? 'BEAR' : 'NEUTRAL';
+        const hit = predictedDirection === actualDirection;
+
+        // Check for duplicate outcome
+        const existingOutcomes = await LifecycleStore.getOutcomes(snapshot.asset, 1000);
+        const isDuplicate = existingOutcomes.some(o => 
+          o.version === snapshot.version && 
+          o.horizon === snapshot.horizon
+        );
+
+        if (!isDuplicate) {
+          const outcome: DecisionOutcomeDoc = {
+            asset: snapshot.asset,
+            version: snapshot.version,
+            horizon: snapshot.horizon,
+            snapshotId: `${snapshot.asset}_${snapshot.version}_${snapshot.horizon}`,
+            predictedDirection,
+            actualDirection,
+            hit,
+            predictedReturn: expectedReturn,
+            actualReturn: realizedReturn,
+            error,
+            resolvedAt: new Date(),
+          };
+
+          await LifecycleStore.insertOutcome(outcome);
+          outcomes++;
+        }
+
+        console.log(`[Lifecycle] Force resolved ${snapshot.asset}/${snapshot.version}/${snapshot.horizon}: hit=${hit}`);
+      } catch (err: any) {
+        errors.push(`Failed to resolve ${snapshot.asset}/${snapshot.horizon}: ${err.message}`);
+      }
+    }
+
+    return { resolved, outcomes, errors };
+  } catch (err: any) {
+    errors.push(`Force resolve error: ${err.message}`);
+    return { resolved, outcomes, errors };
+  }
+}

@@ -41,6 +41,7 @@ function sortKeys(obj: any): any {
 
 /**
  * Generate version string from timestamp
+ * Uses milliseconds for uniqueness in rapid succession
  */
 export function generateVersion(): string {
   const now = new Date();
@@ -49,5 +50,7 @@ export function generateVersion(): string {
   const d = String(now.getDate()).padStart(2, '0');
   const h = String(now.getHours()).padStart(2, '0');
   const min = String(now.getMinutes()).padStart(2, '0');
-  return `v${y}${m}${d}.${h}${min}`;
+  const sec = String(now.getSeconds()).padStart(2, '0');
+  const ms = String(now.getMilliseconds()).padStart(3, '0');
+  return `v${y}${m}${d}.${h}${min}${sec}.${ms}`;
 }
