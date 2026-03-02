@@ -27,6 +27,15 @@ export interface RuntimeEngineConfig {
   horizonWeights?: Record<string, number>;
   tierWeights?: Record<string, number>;
 
+  // SPX-specific: Consensus parameters
+  consensusThreshold?: number;    // Default: 0.05
+  divergencePenalty?: number;     // Default: 0.85
+
+  // DXY-specific: Path blend weights
+  syntheticWeight?: number;       // Default: 0.4
+  replayWeight?: number;          // Default: 0.4
+  macroWeight?: number;           // Default: 0.2
+
   // Metadata
   source: 'mongo' | 'static';
   version?: string;
@@ -54,6 +63,13 @@ export async function getRuntimeEngineConfig(asset: AssetKey): Promise<RuntimeEn
       regimeConditioning: doc.regimeConditioning ?? DEFAULT_MODEL_CONFIG.regimeConditioning ?? true,
       horizonWeights: doc.horizonWeights ?? DEFAULT_MODEL_CONFIG.horizonWeights,
       tierWeights: doc.tierWeights ?? DEFAULT_MODEL_CONFIG.tierWeights,
+      // SPX-specific
+      consensusThreshold: doc.consensusThreshold ?? 0.05,
+      divergencePenalty: doc.divergencePenalty ?? 0.85,
+      // DXY-specific
+      syntheticWeight: doc.syntheticWeight ?? 0.4,
+      replayWeight: doc.replayWeight ?? 0.4,
+      macroWeight: doc.macroWeight ?? 0.2,
       source: 'mongo',
       version: doc.version,
       updatedAt: doc.updatedAt,
@@ -71,6 +87,13 @@ export async function getRuntimeEngineConfig(asset: AssetKey): Promise<RuntimeEn
     regimeConditioning: DEFAULT_MODEL_CONFIG.regimeConditioning ?? true,
     horizonWeights: DEFAULT_MODEL_CONFIG.horizonWeights,
     tierWeights: DEFAULT_MODEL_CONFIG.tierWeights,
+    // SPX defaults
+    consensusThreshold: 0.05,
+    divergencePenalty: 0.85,
+    // DXY defaults
+    syntheticWeight: 0.4,
+    replayWeight: 0.4,
+    macroWeight: 0.2,
     source: 'static',
   };
 }
@@ -122,6 +145,13 @@ export async function getRuntimeDebugInfo(asset: AssetKey): Promise<{
   regimeConditioning: boolean;
   horizonWeights?: Record<string, number>;
   tierWeights?: Record<string, number>;
+  // SPX-specific
+  consensusThreshold?: number;
+  divergencePenalty?: number;
+  // DXY-specific
+  syntheticWeight?: number;
+  replayWeight?: number;
+  macroWeight?: number;
   version?: string;
   updatedAt?: string;
   activeVersion?: string;
@@ -150,6 +180,13 @@ export async function getRuntimeDebugInfo(asset: AssetKey): Promise<{
     regimeConditioning: cfg.regimeConditioning,
     horizonWeights: cfg.horizonWeights,
     tierWeights: cfg.tierWeights,
+    // SPX-specific
+    consensusThreshold: cfg.consensusThreshold,
+    divergencePenalty: cfg.divergencePenalty,
+    // DXY-specific
+    syntheticWeight: cfg.syntheticWeight,
+    replayWeight: cfg.replayWeight,
+    macroWeight: cfg.macroWeight,
     version: cfg.version,
     updatedAt: cfg.updatedAt?.toISOString(),
     // P1-A: Lifecycle info

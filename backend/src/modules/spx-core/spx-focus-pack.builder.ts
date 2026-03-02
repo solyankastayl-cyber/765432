@@ -2,9 +2,10 @@
  * SPX CORE — Focus Pack Builder
  * 
  * BLOCK B5.2.5 — Complete Focus Pack Assembly
+ * P3-A: Runtime-config integration for SPX Lifecycle
  * 
  * Builds complete SPX focus-pack for a given horizon.
- * ISOLATION: Does NOT import from /modules/btc/ or /modules/fractal/
+ * Now reads runtime config from MongoDB (asset-aware).
  */
 
 import { spxCandlesService, type SpxCandle } from './spx-candles.service.js';
@@ -15,6 +16,8 @@ import { selectPrimaryMatch, getHorizonTier, type SpxPrimaryMatch, type SpxPrima
 import { calculateDivergence, type SpxDivergenceMetrics, type SpxAxisMode } from './spx-divergence.service.js';
 import { detectPhaseFromCloses, type SpxPhase, type SpxPhaseResult } from './spx-phase.service.js';
 import { SPX_HORIZON_CONFIG, type SpxHorizonKey, type SpxHorizonConfig, isValidSpxHorizon } from './spx-horizon.config.js';
+// P3-A: Import runtime config for SPX
+import { getRuntimeEngineConfig, type RuntimeEngineConfig } from '../fractal/config/runtime-config.service.js';
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -28,6 +31,9 @@ export interface SpxFocusPackMeta {
   topK: number;
   tier: SpxHorizonTier;
   asOf: string;
+  // P3-A: Runtime config tracking
+  configSource: 'mongo' | 'static';
+  modelVersion?: string;
 }
 
 export interface SpxOverlayMatch {
@@ -146,6 +152,7 @@ export interface SpxFocusPack {
 
 /**
  * Build complete SPX Focus Pack for a given horizon
+ * P3-A: Now uses runtime config from MongoDB
  */
 export async function buildSpxFocusPack(focus: SpxHorizonKey): Promise<SpxFocusPack> {
   const t0 = Date.now();
@@ -155,7 +162,17 @@ export async function buildSpxFocusPack(focus: SpxHorizonKey): Promise<SpxFocusP
     throw new Error(`Invalid SPX horizon: ${focus}`);
   }
   
-  const config = SPX_HORIZON_CONFIG[focus];
+  // P3-A: Get runtime config for SPX (from MongoDB or static fallback)
+  const runtimeConfig = await getRuntimeEngineConfig('SPX');
+  
+  // Merge runtime config with static horizon config
+  const staticConfig = SPX_HORIZON_CONFIG[focus];
+  const config = {
+    ...staticConfig,
+    windowLen: runtimeConfig.windowLen ?? staticConfig.windowLen,
+    topK: runtimeConfig.topK ?? staticConfig.topK,
+  };
+  
   const tier = getHorizonTier(focus);
   const asOf = new Date().toISOString();
   
@@ -186,7 +203,7 @@ export async function buildSpxFocusPack(focus: SpxHorizonKey): Promise<SpxFocusP
   const change7d = ((currentPrice - price7dAgo) / price7dAgo) * 100;
   const change30d = ((currentPrice - price30dAgo) / price30dAgo) * 100;
   
-  // Get current window
+  // Get current window (P3-A: uses runtime windowLen)
   const windowCandles = allCandles.slice(-config.windowLen);
   const currentWindowRaw = windowCandles.map(c => c.c);
   const currentWindowNormalized = normalizeSeries(currentWindowRaw);
@@ -195,7 +212,7 @@ export async function buildSpxFocusPack(focus: SpxHorizonKey): Promise<SpxFocusP
   // Detect current phase
   const phaseResult = detectPhaseFromCloses(allCloses.slice(-200));
   
-  // Scan for matches
+  // Scan for matches (P3-A: uses runtime topK)
   const scanConfig: Partial<SpxScanConfig> = {
     windowLen: config.windowLen,
     aftermathDays: config.aftermathDays,
@@ -207,7 +224,7 @@ export async function buildSpxFocusPack(focus: SpxHorizonKey): Promise<SpxFocusP
   const scanResult = await scanSpxMatchesForWindow(currentWindowRaw, scanConfig);
   const scanTimeMs = scanResult.processingTimeMs;
   
-  // Process matches
+  // Process matches (P3-A: uses runtime topK)
   const processedMatches: SpxOverlayMatch[] = scanResult.matches.slice(0, config.topK).map(m => ({
     id: m.id,
     similarity: m.similarity,
@@ -317,6 +334,9 @@ export async function buildSpxFocusPack(focus: SpxHorizonKey): Promise<SpxFocusP
       topK: config.topK,
       tier,
       asOf,
+      // P3-A: Runtime config tracking
+      configSource: runtimeConfig.source,
+      modelVersion: runtimeConfig.version,
     },
     price: {
       current: currentPrice,

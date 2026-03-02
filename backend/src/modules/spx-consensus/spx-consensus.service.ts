@@ -2,6 +2,7 @@
  * SPX CONSENSUS ENGINE — Main Service
  * 
  * BLOCK B5.5 — Complete consensus computation
+ * P3-A: Runtime-configurable threshold and weights
  * 
  * Combines weights, conflict detection, and decision resolution
  * into a single SPX consensus result.
@@ -17,6 +18,8 @@ import type {
   Direction,
   SpxHorizon
 } from './spx-consensus.types.js';
+// P3-A: Import runtime config
+import { getRuntimeEngineConfig } from '../fractal/config/runtime-config.service.js';
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN SERVICE CLASS
@@ -25,8 +28,9 @@ import type {
 export class SpxConsensusService {
   /**
    * Build complete SPX consensus from horizon stack
+   * P3-A: Now supports runtime-configurable threshold
    */
-  build(input: SpxConsensusInput): SpxConsensus {
+  build(input: SpxConsensusInput, consensusThreshold: number = 0.05, divergencePenaltyOverride?: number): SpxConsensus {
     const { horizonStack, phaseNow, preset = 'BALANCED' } = input;
     
     if (horizonStack.length === 0) {
@@ -48,12 +52,15 @@ export class SpxConsensusService {
       divergenceGrades,
     });
     
-    // 2) Build votes
+    // 2) Build votes (P3-A: uses divergencePenaltyOverride if provided)
     const votes: HorizonVote[] = horizonStack.map(h => {
       const w = weights[h.horizon] || 0;
       const sign = h.direction === 'BULL' ? 1 : h.direction === 'BEAR' ? -1 : 0;
       
-      const divergencePenalty = gradePenalty(h.divergenceGrade);
+      // P3-A: Use runtime penalty or grade-based
+      const divergencePenalty = divergencePenaltyOverride !== undefined && h.divergenceGrade === 'D' 
+        ? divergencePenaltyOverride 
+        : gradePenalty(h.divergenceGrade);
       const blockerPenalty = h.blockers?.length ? 0.0 : 1.0;
       
       const voteScore = sign * h.confidence * w * divergencePenalty * blockerPenalty;
@@ -78,10 +85,10 @@ export class SpxConsensusService {
     const net = votes.reduce((a, v) => a + v.voteScore, 0);
     const consensusIndex = Math.max(0, Math.min(100, Math.round((Math.abs(net) / sumAbs) * 100)));
     
-    // 5) Determine overall direction
+    // 5) Determine overall direction (P3-A: uses runtime threshold)
     let direction: Direction = 'NEUTRAL';
-    if (net > 0.05) direction = 'BULL';
-    else if (net < -0.05) direction = 'BEAR';
+    if (net > consensusThreshold) direction = 'BULL';
+    else if (net < -consensusThreshold) direction = 'BEAR';
     
     // 6) Resolve final decision
     const resolved = resolveDecision({
@@ -108,6 +115,16 @@ export class SpxConsensusService {
       phaseFlags: phaseNow?.flags,
       computedAt: new Date().toISOString(),
     };
+  }
+  
+  /**
+   * P3-A: Build consensus with runtime config from MongoDB
+   */
+  async buildWithRuntimeConfig(input: SpxConsensusInput): Promise<SpxConsensus> {
+    const runtimeConfig = await getRuntimeEngineConfig('SPX');
+    const threshold = runtimeConfig.consensusThreshold ?? 0.05;
+    const divergencePenalty = runtimeConfig.divergencePenalty ?? 0.85;
+    return this.build(input, threshold, divergencePenalty);
   }
   
   /**

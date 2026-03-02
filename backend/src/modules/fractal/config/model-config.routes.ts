@@ -15,6 +15,7 @@ interface ConfigQuery {
 }
 
 interface ConfigUpdateBody {
+  asset?: string;  // P3-A: Accept asset in body
   windowLen?: number;
   topK?: number;
   similarityMode?: 'zscore' | 'raw_returns';
@@ -23,6 +24,13 @@ interface ConfigUpdateBody {
   regimeConditioning?: boolean;
   horizonWeights?: Record<string, number>;
   tierWeights?: Record<string, number>;
+  // P3-A: SPX-specific
+  consensusThreshold?: number;
+  divergencePenalty?: number;
+  // P3-B: DXY-specific  
+  syntheticWeight?: number;
+  replayWeight?: number;
+  macroWeight?: number;
 }
 
 export async function modelConfigRoutes(fastify: FastifyInstance): Promise<void> {
@@ -88,7 +96,8 @@ export async function modelConfigRoutes(fastify: FastifyInstance): Promise<void>
       Body: ConfigUpdateBody;
     }>
   ) => {
-    const asset = (request.query.asset ?? 'BTC') as AssetKey;
+    // P3-A: Accept asset from body or query string
+    const asset = ((request.body as any)?.asset ?? request.query.asset ?? 'BTC') as AssetKey;
     const body = request.body || {};
     
     try {
@@ -116,6 +125,13 @@ export async function modelConfigRoutes(fastify: FastifyInstance): Promise<void>
       if (body.regimeConditioning !== undefined) patch.regimeConditioning = body.regimeConditioning;
       if (body.horizonWeights !== undefined) patch.horizonWeights = body.horizonWeights;
       if (body.tierWeights !== undefined) patch.tierWeights = body.tierWeights;
+      // P3-A: SPX-specific
+      if ((body as any).consensusThreshold !== undefined) (patch as any).consensusThreshold = (body as any).consensusThreshold;
+      if ((body as any).divergencePenalty !== undefined) (patch as any).divergencePenalty = (body as any).divergencePenalty;
+      // P3-B: DXY-specific
+      if ((body as any).syntheticWeight !== undefined) (patch as any).syntheticWeight = (body as any).syntheticWeight;
+      if ((body as any).replayWeight !== undefined) (patch as any).replayWeight = (body as any).replayWeight;
+      if ((body as any).macroWeight !== undefined) (patch as any).macroWeight = (body as any).macroWeight;
       
       // Upsert to MongoDB
       const result = await ModelConfigStore.upsert(asset, patch, 'admin:governance');

@@ -26,6 +26,15 @@ export interface ModelConfigDoc {
   horizonWeights?: Record<string, number>;
   tierWeights?: Record<string, number>;
 
+  // SPX-specific: Consensus parameters
+  consensusThreshold?: number;    // Default: 0.05, min value to call BULL/BEAR
+  divergencePenalty?: number;     // Default: 0.85, penalty for grade D divergence
+
+  // DXY-specific: Path blend weights
+  syntheticWeight?: number;       // Default: 0.4
+  replayWeight?: number;          // Default: 0.4
+  macroWeight?: number;           // Default: 0.2
+
   // Metadata
   updatedAt: Date;
   updatedBy?: string;
