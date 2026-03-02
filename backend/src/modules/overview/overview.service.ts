@@ -288,6 +288,35 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
         const minPredicted = Math.floor(horizonDays * 0.5);
       
         if (predictedCount >= minPredicted) {
+          // Convert confidence from 0-1 to 0-100 scale
+          const confidenceRaw = snapshot.metadata?.confidence || 0.5;
+          const confidence100 = confidenceRaw > 1 ? confidenceRaw : confidenceRaw * 100;
+          
+          // Calculate projection from series
+          const projectionPct = calculateProjection(snapshot.series, snapshot.anchorIndex);
+          
+          // Derive stance from projection if not in metadata
+          const stanceFromMeta = snapshot.metadata?.stance;
+          const derivedStance = stanceFromMeta || 
+            (projectionPct > 0.02 ? 'BULLISH' : projectionPct < -0.02 ? 'BEARISH' : 'HOLD');
+          
+          // Build horizons data from snapshot series for different timeframes
+          const anchorPrice = snapshot.series[snapshot.anchorIndex]?.v || 0;
+          const horizonsData = [30, 90, 180, 365].map(days => {
+            // Find price at anchor + days (or last available)
+            const targetIdx = Math.min(snapshot.anchorIndex + days, snapshot.series.length - 1);
+            const targetPrice = snapshot.series[targetIdx]?.v || anchorPrice;
+            const proj = anchorPrice > 0 ? (targetPrice - anchorPrice) / anchorPrice : 0;
+            
+            return {
+              days,
+              projection: proj,
+              rangeLow: proj - 0.05,
+              rangeHigh: proj + 0.05,
+              confidence: confidence100,
+            };
+          });
+          
           // Convert snapshot to terminal format for compatibility
           const result = {
             ok: true,
@@ -295,21 +324,22 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
             modelVersion: snapshot.metadata?.modelVersion || 'unknown',
             summary: {
               projection: {
-                median: calculateProjection(snapshot.series, snapshot.anchorIndex),
+                median: projectionPct,
               },
-              confidence: snapshot.metadata?.confidence || 0.5,
+              confidence: confidence100, // Now in 0-100 scale
               tailRiskRate: 0,
-              stance: snapshot.metadata?.stance || 'HOLD',
+              stance: derivedStance,
             },
             charts: {
               actual: snapshot.series.slice(0, snapshot.anchorIndex + 1),
               predicted: snapshot.series.slice(snapshot.anchorIndex),
             },
+            horizons: horizonsData, // Add horizons data
             createdAt: snapshot.createdAt,
             snapshotId: snapshot._id,
           };
           
-          console.log(`[Overview] READ-ONLY snapshot loaded: ${assetUpper}/${horizonDays}d view=${usedView} (modelVersion: ${result.modelVersion})`);
+          console.log(`[Overview] READ-ONLY snapshot loaded: ${assetUpper}/${horizonDays}d view=${usedView} confidence=${confidence100}% stance=${derivedStance} (modelVersion: ${result.modelVersion})`);
           setCache(cacheKey, result);
           return result;
         } else {

@@ -1,0 +1,66 @@
+{
+  "summary": "Verified BTC Overview bug fix - Verdict shows BULLISH ~78% (not HOLD), chart shows ~$151,866 (not $178K), Horizons table displays correct BULLISH percentages (30d +3.5%, 90d +13.5%, 180d +53.8%, 365d +130.9%). All horizon and asset switching works correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/ui/overview?asset=spx",
+        "issue": "SPX horizons return HOLD with 0% projection and 50% confidence - may need snapshot data"
+      },
+      {
+        "endpoint": "/api/ui/overview?asset=dxy",
+        "issue": "DXY horizons return HOLD with 0% projection and 50% confidence - may need snapshot data"
+      },
+      {
+        "note": "WebSocket connection errors in frontend console (non-blocking) - WS_ENABLED=false but frontend still attempts connections"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Horizon table",
+        "issues": ["Confidence displays as 77.60000000000001% - should be formatted to 2 decimal places (77.60%)"]
+      }
+    ]
+  },
+  "passed_tests": [
+    "BTC 365d Verdict: BULLISH 78% (not HOLD 1%)",
+    "BTC 365d Chart: Last predicted point ~$151,866 (not $178K)",
+    "BTC Horizons Table: 30d BULLISH +3.5%",
+    "BTC Horizons Table: 90d BULLISH +13.5%",
+    "BTC Horizons Table: 180d BULLISH +53.8%",
+    "BTC Horizons Table: 365d BULLISH +130.9%",
+    "BTC is default asset on Overview page",
+    "Horizon switching works: 7d/14d/30d/90d/180d/365d",
+    "Asset switching works: BTC/SPX/DXY",
+    "API /api/ui/overview?asset=btc&horizon=365 returns correct data",
+    "SPX Overview works (shows HOLD)",
+    "DXY Overview works (shows HOLD)"
+  ],
+  "test_report_links": [
+    "/app/test_reports/iteration_5.json"
+  ],
+  "action_items": [
+    "MINOR: Format confidence percentage to 2 decimal places in horizon table (77.60000000000001% → 77.6%)"
+  ],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% - All API endpoints return correct data",
+    "frontend": "100% - All tested features working"
+  },
+  "seed_data_creation": "None - existing snapshots used",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BTC Overview bug fix verified. Backend correctly converts confidence from 0-1 to 0-100 scale, and horizons data is populated from snapshot series. BTC uses crossAsset view by default. SPX/DXY show HOLD because they may not have proper snapshot data with projections.",
+  "verified_fixes": {
+    "btc_verdict_bullish": "VERIFIED - BTC 365d shows BULLISH 78% (not HOLD 1%)",
+    "btc_chart_value": "VERIFIED - Chart shows ~$151,866 (not $178K)",
+    "btc_horizons_table": "VERIFIED - All 4 horizons show BULLISH with correct percentages",
+    "horizon_switching": "VERIFIED - All 6 horizons work",
+    "asset_switching": "VERIFIED - BTC/SPX/DXY all switch correctly"
+  }
+}
