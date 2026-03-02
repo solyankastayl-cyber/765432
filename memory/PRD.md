@@ -101,6 +101,15 @@ Summary: 100% pass rate (10/10 checks), Grade: A
 ✅ FORECAST_LENGTH_DXY: Forecast has 80 points (>= 45 required)
 ```
 
+## Bug Fix: BTC Overview vs Fractals Discrepancy (2026-03-02)
+**Проблема:** Overview показывал ~$180K для BTC 365d, а BTC Fractals (BTC ∧ SPX) показывал ~$150K
+**Причина:** Overview для BTC использовал `hybrid` view вместо `crossAsset`
+**Исправление:**
+1. `OverviewPage.jsx` строка 542: изменено `predictionView` с условного `hybrid` для BTC на `crossAsset`
+2. `OverviewPage.jsx` строка 489: default asset изменён с `'spx'` на `'btc'`
+3. Сгенерированы BTC crossAsset snapshots для всех горизонтов (7, 14, 30, 90, 180, 365d)
+**Результат:** Overview и BTC Fractals показывают идентичный прогноз: **$151,866.95** для 365d
+
 ## Testing Results (2026-03-02)
 - Backend: 100% pass rate (20/20 tests)
 - Frontend: 100% pass rate (5/5 pages)
