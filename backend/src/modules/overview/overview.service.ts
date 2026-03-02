@@ -365,12 +365,18 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
       const fc = data.data.forecast;
       currentPrice = data.data?.price?.current || currentPrice;
       
+      // SPX forecast.path is array of numbers (prices), not objects
+      // Build dates starting from today
       predicted = [{ t: asOfDate, v: currentPrice }];
+      const startDate = new Date();
       for (let i = 0; i < fc.path.length; i++) {
-        const p = fc.path[i];
-        if (p.date > asOfDate) {
-          predicted.push({ t: p.date, v: p.value || p.price });
-        }
+        const d = new Date(startDate);
+        d.setDate(d.getDate() + i + 1);
+        const dateStr = d.toISOString().split('T')[0];
+        // fc.path[i] is either a number or an object {date, value/price}
+        const pathItem = fc.path[i];
+        const price = typeof pathItem === 'number' ? pathItem : (pathItem.value || pathItem.price || 0);
+        predicted.push({ t: dateStr, v: price });
       }
     } else if (asset === 'dxy' && data.hybrid?.path) {
       const path = data.hybrid.path;
