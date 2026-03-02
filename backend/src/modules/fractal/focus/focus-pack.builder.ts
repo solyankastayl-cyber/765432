@@ -2,18 +2,20 @@
  * BLOCK 70.2 — FocusPack Builder (Real Horizon Binding)
  * BLOCK 73.3 — Unified Path Integration
  * BLOCK 73.5.1 — Phase Stats Integration
+ * P0 — Runtime Config Integration (Governance → Engine chain)
  * 
  * Builds focus-specific overlay and forecast data.
  * Each focus horizon gets DIFFERENT:
- * - windowLen
+ * - windowLen (from runtime config or static fallback)
  * - aftermathDays  
- * - topK matches
+ * - topK matches (from runtime config or static fallback)
  * - distribution series length
  * 
  * This is NOT cosmetic - it's architectural.
  */
 
 import { HORIZON_CONFIG, type HorizonKey } from '../config/horizon.config.js';
+import { getRuntimeEngineConfig } from '../config/runtime-config.service.js';
 import { FractalEngine } from '../engine/fractal.engine.js';
 import { CanonicalStore } from '../data/canonical.store.js';
 import {
@@ -57,22 +59,32 @@ function mapToSupportedWindow(windowLen: number): number {
 /**
  * Build complete FocusPack for a given horizon focus
  * BLOCK 73.5.2: Added phaseId parameter for phase filtering
+ * P0: Now reads runtime config from MongoDB (Governance → Engine chain)
  */
 export async function buildFocusPack(
   symbol: string,
   focus: HorizonKey,
   phaseId?: string | null
 ): Promise<FocusPack> {
-  const cfg = HORIZON_CONFIG[focus];
+  const staticCfg = HORIZON_CONFIG[focus];
   const tier = getFocusTier(focus);
   const asOf = new Date().toISOString();
-  const mappedWindowLen = mapToSupportedWindow(cfg.windowLen);
+  
+  // P0: Get runtime config from MongoDB (falls back to static if not set)
+  const runtimeCfg = await getRuntimeEngineConfig(symbol === 'BTC' ? 'BTC' : 'BTC');
+  
+  // Use runtime config for windowLen and topK, static for aftermathDays/minHistory
+  const effectiveWindowLen = runtimeCfg.windowLen;
+  const effectiveTopK = runtimeCfg.topK;
+  const mappedWindowLen = mapToSupportedWindow(effectiveWindowLen);
+  
+  console.log(`[FocusPack] Config source: ${runtimeCfg.source}, windowLen: ${effectiveWindowLen} (mapped: ${mappedWindowLen}), topK: ${effectiveTopK}`);
   
   // Get all candles using getAll (same as overlay routes)
   const allCandles = await canonicalStore.getAll(symbol === 'BTC' ? 'BTC' : symbol, '1d');
   
-  if (!allCandles || allCandles.length < cfg.minHistory) {
-    throw new Error(`INSUFFICIENT_DATA: need ${cfg.minHistory}, got ${allCandles?.length || 0}`);
+  if (!allCandles || allCandles.length < staticCfg.minHistory) {
+    throw new Error(`INSUFFICIENT_DATA: need ${staticCfg.minHistory}, got ${allCandles?.length || 0}`);
   }
   
   const allCloses = allCandles.map(c => c.ohlcv.c);
@@ -80,14 +92,15 @@ export async function buildFocusPack(
   const currentPrice = allCloses[allCloses.length - 1];
   
   // Get matches using engine (same approach as overlay routes)
+  // P0: Uses runtime config for windowLen and topK
   let matchResult: any = null;
   try {
     matchResult = await engine.match({
       symbol: symbol === 'BTC' ? 'BTC' : symbol,
       timeframe: '1d',
       windowLen: mappedWindowLen,
-      topK: cfg.topK * 2, // Get more to filter
-      forwardHorizon: cfg.aftermathDays,
+      topK: effectiveTopK * 2, // Get more to filter
+      forwardHorizon: staticCfg.aftermathDays,
     });
   } catch (err) {
     console.error('[FocusPack] Match error:', err);
@@ -101,8 +114,8 @@ export async function buildFocusPack(
     allCloses, 
     allTimestamps,
     mappedWindowLen,
-    cfg.aftermathDays,
-    cfg.topK * 2 // Get more to filter from
+    staticCfg.aftermathDays,
+    effectiveTopK * 2 // Get more to filter from
   );
   
   // BLOCK 73.5.2: Filter processed matches by phase TYPE if phaseId provided
@@ -128,7 +141,7 @@ export async function buildFocusPack(
       // Rebuild overlay with filtered matches
       if (filteredMatches.length > 0) {
         // Rebuild distribution series from filtered matches
-        const filteredDist = buildDistributionSeries(filteredMatches, cfg.aftermathDays);
+        const filteredDist = buildDistributionSeries(filteredMatches, staticCfg.aftermathDays);
         
         // Recalculate stats
         const returns = filteredMatches.map(m => m.return);
@@ -143,7 +156,7 @@ export async function buildFocusPack(
         
         overlay = {
           ...overlay,
-          matches: filteredMatches.slice(0, cfg.topK),
+          matches: filteredMatches.slice(0, effectiveTopK),
           distributionSeries: filteredDist,
           stats: filteredStats,
         };
@@ -184,7 +197,7 @@ export async function buildFocusPack(
   // BLOCK 73.3: Build Unified Path (single source of truth)
   const unifiedPath = buildUnifiedPath(
     currentPrice,
-    cfg.aftermathDays,
+    staticCfg.aftermathDays,
     overlay.distributionSeries,
     selectionResult.primaryMatch
   );
@@ -196,15 +209,17 @@ export async function buildFocusPack(
   const diagnostics = buildDiagnostics(matchResult, overlay, allCandles);
   
   // U3: Add horizon to meta for frontend to track which horizon is active
+  // P0: Include runtime config info in meta
   const meta: FocusPackMeta = {
     symbol,
     focus,
     horizon: focus, // U3: Explicitly include horizon
-    windowLen: cfg.windowLen,
-    aftermathDays: cfg.aftermathDays,
-    topK: cfg.topK,
+    windowLen: effectiveWindowLen, // P0: From runtime config
+    aftermathDays: staticCfg.aftermathDays,
+    topK: effectiveTopK, // P0: From runtime config
     tier,
     asOf,
+    configSource: runtimeCfg.source, // P0: Track config source
   };
   
   // BLOCK 73.1.1: Build normalized series for STRUCTURE % mode
@@ -218,7 +233,7 @@ export async function buildFocusPack(
   const divergence = buildDivergenceFromUnified(
     unifiedPath,
     currentPrice,
-    cfg.aftermathDays,
+    staticCfg.aftermathDays,
     tier,
     normalizedSeries.mode
   );
@@ -227,7 +242,7 @@ export async function buildFocusPack(
   const scenario = buildScenarioPack(
     overlay,
     currentPrice,
-    cfg.aftermathDays,
+    staticCfg.aftermathDays,
     focus,
     asOf,
     unifiedPath,

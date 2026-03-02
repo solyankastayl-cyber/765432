@@ -20,6 +20,7 @@ export interface FocusPackMeta {
   topK: number;
   tier: 'TIMING' | 'TACTICAL' | 'STRUCTURE';
   asOf: string;
+  configSource?: 'mongo' | 'static'; // P0: Track runtime config source
 }
 
 export interface OverlayMatch {

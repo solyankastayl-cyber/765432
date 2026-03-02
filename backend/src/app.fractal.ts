@@ -31,6 +31,7 @@ import { registerDailyRunRoutes } from './modules/ops/daily-run/index.js';
 import { registerSpxUnifiedRoutes } from './modules/fractal/api/fractal.spx.routes.js';
 import { registerForwardAdminRoutes } from './modules/forward/api/forward.admin.routes.js';
 import { registerDxyModule } from './modules/dxy/index.js';
+import modelConfigRoutes from './modules/fractal/config/model-config.routes.js';
 import { getMongoDb } from './db/mongoose.js';
 import fs from 'fs';
 import path from 'path';
@@ -501,6 +502,13 @@ async function main() {
   console.log('[Fractal] Registering Admin Auth...');
   await app.register(adminAuthRoutes, { prefix: '/api/admin' });
   console.log('[Fractal] ✅ Admin Auth registered');
+  
+  // ═══════════════════════════════════════════════════════════════
+  // P0: MODEL CONFIG ROUTES — Runtime config management
+  // ═══════════════════════════════════════════════════════════════
+  console.log('[Fractal] Registering Model Config routes (P0)...');
+  await app.register(modelConfigRoutes);
+  console.log('[Fractal] ✅ Model Config routes registered');
   
   // ═══════════════════════════════════════════════════════════════
   // INDEX ENGINE V2 — Unified API for all indices
