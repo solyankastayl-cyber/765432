@@ -222,44 +222,53 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
   if (cached) return cached;
   
   try {
-    // ARCHITECTURE FIX: Read from stored snapshot ONLY
+    // V1 LOCKED: Read from stored snapshot ONLY
     // Overview MUST NOT recalculate model - only display saved predictions
-    // BTC Overview shows FINAL layer (after DXY+SPX cross-asset overlay)
-    // Fallback: use 'hybrid' if 'crossAsset' not available
-    const primaryViewMap: Record<Asset, string> = {
+    // BTC: crossAsset required (NO FALLBACK to hybrid per V1 spec)
+    // SPX/DXY: hybrid view (crossAsset optional)
+    const viewMap: Record<Asset, string> = {
       dxy: 'hybrid',
-      spx: 'crossAsset',
-      btc: 'crossAsset',  // BTC FINAL = cross-asset (SPX + DXY) → BTC hybrid
+      spx: 'hybrid',  // SPX uses hybrid (crossAsset overlay optional)
+      btc: 'crossAsset',  // BTC FINAL = cross-asset (SPX + DXY) → BTC hybrid - NO FALLBACK
     };
-    const fallbackViewMap: Record<Asset, string> = {
-      dxy: 'hybrid',
-      spx: 'hybrid',
-      btc: 'hybrid',  // Fallback to raw hybrid if crossAsset not available
+    
+    // V1 LOCKED: Fallback allowed for SPX/DXY (to hybrid), but NOT for BTC
+    const fallbackAllowed: Record<Asset, boolean> = {
+      dxy: true,   // DXY can fallback to terminal
+      spx: true,   // SPX can fallback to hybrid
+      btc: false,  // BTC crossAsset required - NO FALLBACK per V1 LOCKED spec
     };
     
     const horizonDays = parseInt(focus.replace('d', '')) || 90;
     const assetUpper = asset.toUpperCase();
-    const primaryView = primaryViewMap[asset];
-    const fallbackView = fallbackViewMap[asset];
+    const primaryView = viewMap[asset];
     
-    // Try primary view first, then fallback
+    // Try primary view
     let snapshotData: any = null;
     let usedView = primaryView;
     
-    // Primary: Read from prediction_snapshots with primary view
+    // Primary: Read from prediction_snapshots with designated view
     const snapshotRes = await fetch(
       `http://localhost:8002/api/prediction/snapshots?asset=${assetUpper}&view=${primaryView}&horizon=${horizonDays}&limit=1`
     );
     snapshotData = await snapshotRes.json();
     
-    // If no primary view snapshot found and fallback is different, try fallback
-    if ((!snapshotData.ok || !snapshotData.snapshots?.length) && primaryView !== fallbackView) {
-      console.log(`[Overview] No ${primaryView} snapshot for ${assetUpper}/${horizonDays}d, trying ${fallbackView}`);
-      const fallbackRes = await fetch(
-        `http://localhost:8002/api/prediction/snapshots?asset=${assetUpper}&view=${fallbackView}&horizon=${horizonDays}&limit=1`
-      );
-      snapshotData = await fallbackRes.json();
-      usedView = fallbackView;
+    // V1 LOCKED: For BTC, if no crossAsset snapshot exists, return error (no fallback)
+    // For SPX/DXY, fallback to hybrid is allowed
+    if ((!snapshotData.ok || !snapshotData.snapshots?.length)) {
+      if (!fallbackAllowed[asset]) {
+        // BTC: NO FALLBACK - crossAsset snapshot is required
+        console.warn(`[Overview V1] ${assetUpper} crossAsset snapshot missing - no fallback allowed per V1 LOCKED`);
+        // Continue to try terminal endpoint as last resort for BTC (realtime data)
+      } else if (primaryView !== 'hybrid') {
+        // SPX/DXY: Fallback to hybrid
+        console.log(`[Overview] No ${primaryView} snapshot for ${assetUpper}/${horizonDays}d, trying hybrid`);
+        const fallbackRes = await fetch(
+          `http://localhost:8002/api/prediction/snapshots?asset=${assetUpper}&view=hybrid&horizon=${horizonDays}&limit=1`
+        );
+        snapshotData = await fallbackRes.json();
+        usedView = 'hybrid';
+      }
     }
     
     if (snapshotData.ok && snapshotData.snapshots?.length > 0) {
