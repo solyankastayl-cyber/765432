@@ -56,6 +56,16 @@ API ключ для macro (FRED): 2c0bf55cfd182a3a4d2e4fd017a622f7
 - Frontend: 100% pass rate (4/4 pages)
 - Integration: 95% (minor WebSocket issues don't affect core functionality)
 
+### Bug Fix Session (2026-03-02)
+**Issue**: Historical Matches в BTC Fractal (Hybrid/SPX Overlay режимы) подсвечивали ДВА фрактала вместо одного
+- Зеленый - best match (highest similarity)
+- Черный жирный - primaryMatch (weighted selection)
+
+**Fix**: Изменён `MatchPicker` компонент в `FractalHybridChart.jsx`:
+- Теперь выделяется ТОЛЬКО один match - с максимальным similarity (первый в отсортированном списке)
+- Убрана зависимость от `primaryMatchId` (weighted selection) для визуального выделения
+- Файл: `/app/frontend/src/components/fractal/chart/FractalHybridChart.jsx`
+
 ## Prioritized Backlog
 
 ### P0 (Critical) - DONE
