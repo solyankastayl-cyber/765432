@@ -160,55 +160,89 @@ class FractalPlatformTester:
         return success
 
     def test_overview_apis(self) -> Tuple[bool, bool, bool]:
-        """Test Overview APIs for all three assets"""
+        """Test Overview APIs for all three assets with specific fix validation"""
         
-        # Test BTC Overview
-        btc_success, btc_response = self.run_test(
-            "BTC Overview API (90d)", 
-            "GET", 
-            "/api/ui/overview",
-            params={"asset": "BTC", "horizon": "90"}
-        )
-        
-        if btc_success and isinstance(btc_response, dict):
-            if 'series' in btc_response:
-                series = btc_response['series']
-                if isinstance(series, list):
-                    self.log(f"   📊 BTC series length: {len(series)}")
-            if 'verdict' in btc_response:
-                verdict = btc_response['verdict']
-                if isinstance(verdict, dict) and 'expectedMovePct' in verdict:
-                    self.log(f"   📈 BTC expected: {verdict['expectedMovePct']:.2f}%")
-
-        # Test SPX Overview
-        spx_success, spx_response = self.run_test(
-            "SPX Overview API (90d)", 
-            "GET", 
-            "/api/ui/overview",
-            params={"asset": "SPX", "horizon": "90"}
-        )
-        
-        if spx_success and isinstance(spx_response, dict):
-            if 'series' in spx_response:
-                series = spx_response['series']
-                if isinstance(series, list):
-                    self.log(f"   📊 SPX series length: {len(series)}")
-
-        # Test DXY Overview
+        # Test DXY Overview - should return DXY data, not SPX data
         dxy_success, dxy_response = self.run_test(
-            "DXY Overview API (90d)", 
+            "DXY Overview API (90d) - Fix: Should return DXY data (~117-120), not SPX", 
             "GET", 
             "/api/ui/overview",
             params={"asset": "DXY", "horizon": "90"}
         )
         
         if dxy_success and isinstance(dxy_response, dict):
-            if 'series' in dxy_response:
-                series = dxy_response['series']
-                if isinstance(series, list):
-                    self.log(f"   📊 DXY series length: {len(series)}")
+            # Validate asset field
+            if 'asset' in dxy_response:
+                returned_asset = dxy_response['asset']
+                self.log(f"   🔍 Returned asset: {returned_asset} (expected: dxy)")
+                if returned_asset != 'dxy':
+                    self.log(f"   ❌ ASSET MISMATCH: Expected 'dxy', got '{returned_asset}'")
+            
+            # Check if data values are in DXY range (~117-120), not SPX range (~5000-6900)
+            if 'charts' in dxy_response and 'actual' in dxy_response['charts']:
+                actual_data = dxy_response['charts']['actual']
+                if actual_data and len(actual_data) > 0:
+                    recent_price = actual_data[-1].get('v', 0) if isinstance(actual_data[-1], dict) else 0
+                    self.log(f"   💰 Current DXY price: {recent_price}")
+                    if recent_price > 1000:
+                        self.log(f"   ❌ PRICE ISSUE: DXY price {recent_price} looks like SPX data (should be ~117-120)")
+                    else:
+                        self.log(f"   ✅ DXY price range looks correct")
+                
+            # Check predicted points count
+            if 'charts' in dxy_response and 'predicted' in dxy_response['charts']:
+                predicted_data = dxy_response['charts']['predicted']
+                if predicted_data:
+                    predicted_count = len(predicted_data)
+                    self.log(f"   📈 DXY predicted points: {predicted_count} (expected: ~90)")
 
-        return btc_success, spx_success, dxy_success
+        # Test SPX Overview - should return proper forecast.path structure
+        spx_success, spx_response = self.run_test(
+            "SPX Overview API (90d) - Fix: Should have ~91 predicted points", 
+            "GET", 
+            "/api/ui/overview",
+            params={"asset": "SPX", "horizon": "90"}
+        )
+        
+        if spx_success and isinstance(spx_response, dict):
+            # Validate asset field
+            if 'asset' in spx_response:
+                returned_asset = spx_response['asset']
+                self.log(f"   🔍 Returned asset: {returned_asset} (expected: spx)")
+            
+            # Check predicted points count (should be ~91, not 1)
+            if 'charts' in spx_response and 'predicted' in spx_response['charts']:
+                predicted_data = spx_response['charts']['predicted']
+                if predicted_data:
+                    predicted_count = len(predicted_data)
+                    self.log(f"   📈 SPX predicted points: {predicted_count} (expected: ~91)")
+                    if predicted_count < 10:
+                        self.log(f"   ❌ FORECAST ISSUE: Only {predicted_count} predicted points, expected ~91")
+                    else:
+                        self.log(f"   ✅ SPX forecast points look correct")
+
+        # Test BTC Overview - should return BTC data, not SPX data
+        btc_success, btc_response = self.run_test(
+            "BTC Overview API (90d) - Fix: Should return BTC data with ~91 predicted points", 
+            "GET", 
+            "/api/ui/overview",
+            params={"asset": "BTC", "horizon": "90"}
+        )
+        
+        if btc_success and isinstance(btc_response, dict):
+            # Validate asset field
+            if 'asset' in btc_response:
+                returned_asset = btc_response['asset']
+                self.log(f"   🔍 Returned asset: {returned_asset} (expected: btc)")
+            
+            # Check predicted points count
+            if 'charts' in btc_response and 'predicted' in btc_response['charts']:
+                predicted_data = btc_response['charts']['predicted']
+                if predicted_data:
+                    predicted_count = len(predicted_data)
+                    self.log(f"   📈 BTC predicted points: {predicted_count} (expected: ~91)")
+
+        return dxy_success, spx_success, btc_success
 
     def run_all_tests(self) -> Dict[str, Any]:
         """Run all API tests and return summary"""
@@ -221,9 +255,10 @@ class FractalPlatformTester:
             "btc_fractal": False, 
             "spx_fractal": False,
             "dxy_terminal": False,
-            "btc_overview": False,
+            "dxy_overview": False,
             "spx_overview": False,
-            "dxy_overview": False
+            "btc_overview": False,
+            "case_insensitive": False
         }
         
         # 1. Health Check
@@ -239,7 +274,25 @@ class FractalPlatformTester:
         results["dxy_terminal"] = self.test_dxy_terminal_api()
         
         # 5. Overview APIs
-        results["btc_overview"], results["spx_overview"], results["dxy_overview"] = self.test_overview_apis()
+        results["dxy_overview"], results["spx_overview"], results["btc_overview"] = self.test_overview_apis()
+        
+        # 6. Test case-insensitive asset validation
+        self.log("\n🔤 Testing case-insensitive asset validation...")
+        case_insensitive_success, _ = self.run_test(
+            "Case-insensitive asset test (btc lowercase)", 
+            "GET", 
+            "/api/ui/overview",
+            params={"asset": "btc", "horizon": "90"}
+        )
+        
+        case_insensitive_success2, _ = self.run_test(
+            "Case-insensitive asset test (DXY uppercase)", 
+            "GET", 
+            "/api/ui/overview",
+            params={"asset": "DXY", "horizon": "90"}
+        )
+        
+        results["case_insensitive"] = case_insensitive_success and case_insensitive_success2
         
         # Summary
         self.log("\n" + "="*60)
