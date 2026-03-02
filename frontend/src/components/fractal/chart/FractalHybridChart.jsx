@@ -488,7 +488,7 @@ export function FractalHybridChart({
       {matches.length > 1 && (
         <MatchPicker 
           matches={matches}
-          selectedId={selectedMatchId || primaryMatchId}
+          selectedId={selectedMatchId}
           primaryId={primaryMatchId}
           onSelect={handleMatchSelect}
           loading={replayLoading}
@@ -721,6 +721,9 @@ function getPhaseLabel(phase) {
 function MatchPicker({ matches, selectedId, primaryId, onSelect, loading }) {
   const topMatches = matches.slice(0, 5);
   
+  // Find the best match by highest similarity (first in sorted list)
+  const bestMatchId = topMatches.length > 0 ? topMatches[0].id : null;
+  
   return (
     <div className="px-4 py-3 bg-white" data-testid="match-picker">
       {/* Section Title */}
@@ -731,11 +734,11 @@ function MatchPicker({ matches, selectedId, primaryId, onSelect, loading }) {
         {loading && <span className="ml-2 text-xs text-violet-500 italic">(loading...)</span>}
       </h3>
       
-      {/* Match list - clean, no borders */}
+      {/* Match list - only the BEST match (highest similarity) is highlighted in green */}
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {topMatches.map((match, idx) => {
-          const isSelected = match.id === selectedId;
-          const isBest = idx === 0; // First match is best (highest similarity)
+          // Only highlight the BEST match (highest similarity = first in sorted list)
+          const isBest = match.id === bestMatchId;
           const phaseLabel = getPhaseLabel(match.phase);
           const similarity = Math.round((match.similarity || 0) * 100);
           
@@ -746,14 +749,10 @@ function MatchPicker({ matches, selectedId, primaryId, onSelect, loading }) {
               onClick={() => onSelect(match.id)}
               className={`
                 text-sm py-1 px-0 bg-transparent cursor-pointer transition-colors
-                ${isSelected 
-                  ? 'font-semibold' 
-                  : 'hover:opacity-80'}
+                hover:opacity-80
                 ${isBest 
-                  ? 'text-emerald-600' 
-                  : isSelected 
-                    ? 'text-slate-900' 
-                    : 'text-slate-500'}
+                  ? 'text-emerald-600 font-semibold' 
+                  : 'text-slate-500 font-normal'}
               `}
               title={isBest ? 'Best match (highest similarity)' : 'Click to replay this historical pattern'}
             >
