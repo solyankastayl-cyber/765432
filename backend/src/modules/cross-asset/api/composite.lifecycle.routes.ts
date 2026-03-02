@@ -246,6 +246,207 @@ export async function compositeLifecycleRoutes(fastify: FastifyInstance): Promis
     };
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // P5-A: RESOLVE ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * POST /api/cross-asset/admin/lifecycle/resolve
+   * 
+   * Resolve all mature composite snapshots
+   */
+  fastify.post('/api/cross-asset/admin/lifecycle/resolve', async () => {
+    try {
+      const { resolveAllMatureComposites } = await import('../services/composite.resolve.service.js');
+      const result = await resolveAllMatureComposites();
+      return {
+        ok: result.ok,
+        resolved: result.resolved,
+        skipped: result.skipped,
+        errors: result.errors,
+        outcomes: result.outcomes.map(o => ({
+          versionId: o.versionId,
+          horizonDays: o.horizonDays,
+          directionHit: o.directionHit,
+          errorPct: o.errorPct,
+          realizedReturnPct: o.realizedReturnPct,
+          predictedReturnPct: o.predictedReturnPct,
+        })),
+      };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * POST /api/cross-asset/admin/lifecycle/force-resolve
+   * 
+   * Force resolve a specific snapshot (for testing)
+   */
+  fastify.post('/api/cross-asset/admin/lifecycle/force-resolve', async (
+    request: FastifyRequest<{ Body: { versionId: string; horizonDays: number } }>
+  ) => {
+    const body = request.body || {};
+    if (!body.versionId || !body.horizonDays) {
+      return { ok: false, error: 'versionId and horizonDays required' };
+    }
+    
+    try {
+      const { forceResolveSnapshot } = await import('../services/composite.resolve.service.js');
+      const result = await forceResolveSnapshot(body.versionId, body.horizonDays);
+      return {
+        ok: result.ok,
+        error: result.error,
+        outcome: result.outcome ? {
+          directionHit: result.outcome.directionHit,
+          errorPct: result.outcome.errorPct,
+          realizedReturnPct: result.outcome.realizedReturnPct,
+          predictedReturnPct: result.outcome.predictedReturnPct,
+          components: result.outcome.components,
+        } : null,
+      };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // P5-B: DRIFT ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * GET /api/cross-asset/admin/drift
+   * 
+   * Get overall composite drift metrics
+   */
+  fastify.get('/api/cross-asset/admin/drift', async () => {
+    try {
+      const drift = await import('../services/composite.drift.service.js');
+      const metrics = await drift.getCompositeDrift();
+      return { ok: true, metrics };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * GET /api/cross-asset/admin/drift/by-version
+   * 
+   * Get drift metrics per version
+   */
+  fastify.get('/api/cross-asset/admin/drift/by-version', async () => {
+    try {
+      const drift = await import('../services/composite.drift.service.js');
+      const versions = await drift.getDriftByVersion();
+      return { ok: true, versions };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * GET /api/cross-asset/admin/drift/by-horizon
+   * 
+   * Get drift metrics per horizon
+   */
+  fastify.get('/api/cross-asset/admin/drift/by-horizon', async () => {
+    try {
+      const drift = await import('../services/composite.drift.service.js');
+      const horizons = await drift.getDriftByHorizon();
+      return { ok: true, horizons };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * GET /api/cross-asset/admin/drift/attribution
+   * 
+   * Get component attribution (BTC/SPX/DXY contributions)
+   */
+  fastify.get('/api/cross-asset/admin/drift/attribution', async () => {
+    try {
+      const drift = await import('../services/composite.drift.service.js');
+      const attribution = await drift.getComponentAttribution();
+      return { ok: true, attribution };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * GET /api/cross-asset/admin/drift/weights
+   * 
+   * Get weights diagnostics
+   */
+  fastify.get('/api/cross-asset/admin/drift/weights', async () => {
+    try {
+      const drift = await import('../services/composite.drift.service.js');
+      const diagnostics = await drift.getWeightsDiagnostics();
+      return { ok: true, diagnostics };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * GET /api/cross-asset/admin/drift/worst
+   * 
+   * Get worst performing snapshots
+   */
+  fastify.get('/api/cross-asset/admin/drift/worst', async (
+    request: FastifyRequest<{ Querystring: { limit?: string } }>
+  ) => {
+    try {
+      const drift = await import('../services/composite.drift.service.js');
+      const limit = parseInt(request.query.limit || '10', 10);
+      const snapshots = await drift.getWorstSnapshots(limit);
+      return { 
+        ok: true, 
+        snapshots: snapshots.map(s => ({
+          versionId: s.versionId,
+          horizonDays: s.horizonDays,
+          errorPct: s.errorPct,
+          absErrorPct: s.absErrorPct,
+          directionHit: s.directionHit,
+          asOf: s.asOf,
+          maturityAt: s.maturityAt,
+        }))
+      };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * GET /api/cross-asset/admin/drift/best
+   * 
+   * Get best performing snapshots
+   */
+  fastify.get('/api/cross-asset/admin/drift/best', async (
+    request: FastifyRequest<{ Querystring: { limit?: string } }>
+  ) => {
+    try {
+      const drift = await import('../services/composite.drift.service.js');
+      const limit = parseInt(request.query.limit || '10', 10);
+      const snapshots = await drift.getBestSnapshots(limit);
+      return { 
+        ok: true, 
+        snapshots: snapshots.map(s => ({
+          versionId: s.versionId,
+          horizonDays: s.horizonDays,
+          errorPct: s.errorPct,
+          absErrorPct: s.absErrorPct,
+          realizedReturnPct: s.realizedReturnPct,
+          asOf: s.asOf,
+          maturityAt: s.maturityAt,
+        }))
+      };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   console.log('[CrossAsset] Lifecycle routes registered at /api/cross-asset/*');
 }
 
