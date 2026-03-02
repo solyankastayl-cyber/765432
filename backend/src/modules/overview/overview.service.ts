@@ -278,8 +278,8 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
       // Prevents using wrong asset's snapshot (e.g., SPX snapshot for DXY request)
       const snapshotAsset = snapshot.asset?.toUpperCase();
       if (snapshotAsset && snapshotAsset !== assetUpper) {
-        console.warn(`[Overview] Snapshot asset mismatch: requested ${assetUpper}, got ${snapshotAsset}. Skipping snapshot.`);
-        // Fall through to terminal endpoint
+        console.warn(`[Overview] Snapshot asset mismatch: requested ${assetUpper}, got ${snapshotAsset}. Skipping to terminal.`);
+        // Fall through to terminal endpoint below
       } else {
         const predictedCount = snapshot.series.length - snapshot.anchorIndex;
         
@@ -287,35 +287,35 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
         // We expect at least 50% of horizonDays as predicted points
         const minPredicted = Math.floor(horizonDays * 0.5);
       
-      if (predictedCount >= minPredicted) {
-        // Convert snapshot to terminal format for compatibility
-        const result = {
-          ok: true,
-          source: 'snapshot_readonly',
-          modelVersion: snapshot.metadata?.modelVersion || 'unknown',
-          summary: {
-            projection: {
-              median: calculateProjection(snapshot.series, snapshot.anchorIndex),
+        if (predictedCount >= minPredicted) {
+          // Convert snapshot to terminal format for compatibility
+          const result = {
+            ok: true,
+            source: 'snapshot_readonly',
+            modelVersion: snapshot.metadata?.modelVersion || 'unknown',
+            summary: {
+              projection: {
+                median: calculateProjection(snapshot.series, snapshot.anchorIndex),
+              },
+              confidence: snapshot.metadata?.confidence || 0.5,
+              tailRiskRate: 0,
+              stance: snapshot.metadata?.stance || 'HOLD',
             },
-            confidence: snapshot.metadata?.confidence || 0.5,
-            tailRiskRate: 0,
-            stance: snapshot.metadata?.stance || 'HOLD',
-          },
-          charts: {
-            actual: snapshot.series.slice(0, snapshot.anchorIndex + 1),
-            predicted: snapshot.series.slice(snapshot.anchorIndex),
-          },
-          createdAt: snapshot.createdAt,
-          snapshotId: snapshot._id,
-        };
-        
-        console.log(`[Overview] READ-ONLY snapshot loaded: ${assetUpper}/${horizonDays}d view=${usedView} (modelVersion: ${result.modelVersion})`);
-        setCache(cacheKey, result);
-        return result;
-      } else {
-        console.warn(`[Overview] Snapshot for ${assetUpper}/${horizonDays}d has insufficient predicted points: ${predictedCount} < ${minPredicted}. Falling back to terminal.`);
+            charts: {
+              actual: snapshot.series.slice(0, snapshot.anchorIndex + 1),
+              predicted: snapshot.series.slice(snapshot.anchorIndex),
+            },
+            createdAt: snapshot.createdAt,
+            snapshotId: snapshot._id,
+          };
+          
+          console.log(`[Overview] READ-ONLY snapshot loaded: ${assetUpper}/${horizonDays}d view=${usedView} (modelVersion: ${result.modelVersion})`);
+          setCache(cacheKey, result);
+          return result;
+        } else {
+          console.warn(`[Overview] Snapshot for ${assetUpper}/${horizonDays}d has insufficient predicted points: ${predictedCount} < ${minPredicted}. Falling back to terminal.`);
+        }
       }
-      } // Close the asset match else block
     }
     
     // Fallback: If no snapshot exists, trigger terminal to create one
