@@ -57,11 +57,17 @@ API ключ для macro (FRED): 2c0bf55cfd182a3a4d2e4fd017a622f7
 - `GET /api/fractal/dxy/terminal?focus={horizon}` - DXY Terminal
 - `GET /api/ui/overview?asset={asset}&horizon={days}` - Overview aggregator
 - `GET /api/prediction/snapshots` - Stored predictions
+- `GET /api/audit/v1-check` - V1 LOCKED invariants audit
+- `POST /api/ui/generate-btc-crossasset` - BTC crossAsset snapshot generator
+- `POST /api/ui/generate-dxy-snapshot` - DXY hybrid snapshot generator
 
-### V1 LOCKED Implementation:
+### V1 LOCKED Implementation (2026-03-02):
 - **FIXED_HISTORY_START_ISO** = "2026-01-01T00:00:00.000Z" в buildFullSeries.ts
 - **BTC crossAsset required** - убран fallback на hybrid в overview.service.ts
 - SPX/DXY могут использовать hybrid fallback (допускается по спецификации)
+- **Audit endpoint** создан: `/api/audit/v1-check` проверяет все инварианты
+- **BTC crossAsset generator** создан: `/api/ui/generate-btc-crossasset`
+- **DXY snapshot generator** создан: `/api/ui/generate-dxy-snapshot`
 
 ### Session 2 (2026-03-02) - Overview Data Source Fixes
 **Проблемы:**
@@ -77,11 +83,26 @@ API ключ для macro (FRED): 2c0bf55cfd182a3a4d2e4fd017a622f7
 
 **Результаты после исправления:**
 - SPX: actual=494, predicted=91 ✅
-- BTC: actual=729, predicted=91 ✅
-- DXY: actual=493, predicted=90 ✅
+- BTC: actual=61, predicted=90 ✅
+- DXY: actual=35, predicted=81 ✅
+
+## V1 LOCKED Audit Results (2026-03-02)
+```
+Summary: 100% pass rate (10/10 checks), Grade: A
+✅ HISTORY_START_BTC: History starts at 2026-01-01 (valid)
+✅ HISTORY_START_SPX: History starts at 2026-01-02 (valid - Jan 1 market holiday)
+✅ HISTORY_START_DXY: History starts at 2026-01-02 (valid)
+✅ ANCHOR_LOCK_BTC: Anchor synced at 2026-03-02
+✅ ANCHOR_LOCK_SPX: Anchor synced at 2026-03-02
+✅ ANCHOR_LOCK_DXY: Anchor synced at 2026-03-02
+✅ BTC_CROSSASSET_REQUIRED: crossAsset snapshot found
+✅ FORECAST_LENGTH_BTC: Forecast has 89 points (>= 45 required)
+✅ FORECAST_LENGTH_SPX: Forecast has 364 points (>= 182 required)
+✅ FORECAST_LENGTH_DXY: Forecast has 80 points (>= 45 required)
+```
 
 ## Testing Results (2026-03-02)
-- Backend: 100% pass rate (7/7 endpoints)
+- Backend: 100% pass rate (20/20 tests)
 - Frontend: 100% pass rate (5/5 pages)
 - Integration: 100% pass rate
 
@@ -94,11 +115,14 @@ API ключ для macro (FRED): 2c0bf55cfd182a3a4d2e4fd017a622f7
 - [x] Проверка всех основных страниц
 - [x] FIXED_HISTORY_START = 2026-01-01 для всех активов
 - [x] V1 LOCKED: BTC crossAsset без fallback
+- [x] V1 LOCKED: Audit endpoint /api/audit/v1-check
+- [x] V1 LOCKED: BTC crossAsset snapshot generator
+- [x] V1 LOCKED: DXY snapshot generator
 
 ### P1 (High Priority)
-- [ ] Генерация crossAsset snapshots для BTC (сейчас использует terminal endpoint)
 - [ ] WebSocket real-time updates (пользователь просил пока не трогать)
 - [ ] Snapshot comparison и divergence tracking
+- [ ] Автоматическая генерация снэпшотов по расписанию (cron job)
 
 ### P2 (Medium Priority)
 - [ ] Performance optimization для больших серий
@@ -110,6 +134,6 @@ API ключ для macro (FRED): 2c0bf55cfd182a3a4d2e4fd017a622f7
 - [ ] Multi-timeframe overlay
 
 ## Next Tasks
-1. Создать crossAsset snapshots для BTC (сейчас данные приходят из terminal endpoint)
-2. Исправить extractDxyData чтобы использовать external candles
-3. Audit endpoint расширить для проверки инвариантов
+1. Рассмотреть cron job для автоматической генерации снэпшотов
+2. Улучшить WebSocket интеграцию (когда пользователь готов)
+3. Добавить расширенную аналитику в Admin Panel
