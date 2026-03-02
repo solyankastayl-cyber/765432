@@ -712,6 +712,14 @@ async function main() {
   await btcOverlayRoutes(app);
   console.log('[Fractal] ✅ BTC Overlay registered at /api/overlay/*');
   
+  // ═══════════════════════════════════════════════════════════════
+  // P5-FINAL: ADMIN JOBS & HEALTH ROUTES
+  // ═══════════════════════════════════════════════════════════════
+  console.log('[Fractal] Registering Admin Jobs & Health routes...');
+  const { default: adminJobsRoutes } = await import('./modules/jobs/admin_jobs.routes.js');
+  await adminJobsRoutes(app);
+  console.log('[Fractal] ✅ Admin Jobs & Health registered at /api/admin/*');
+  
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     console.log(`[Fractal] Received ${signal}, shutting down...`);

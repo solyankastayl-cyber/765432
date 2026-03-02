@@ -89,6 +89,8 @@ export async function modelConfigRoutes(fastify: FastifyInstance): Promise<void>
    * 
    * Update model config for asset (writes to MongoDB)
    * This is the KEY endpoint that makes Governance UI affect Engine.
+   * 
+   * P5-FINAL: Governance Freeze - blocked if health is CRITICAL
    */
   fastify.post('/api/fractal/v2.1/admin/governance/model-config', async (
     request: FastifyRequest<{ 
@@ -99,8 +101,29 @@ export async function modelConfigRoutes(fastify: FastifyInstance): Promise<void>
     // P3-A: Accept asset from body or query string
     const asset = ((request.body as any)?.asset ?? request.query.asset ?? 'BTC') as AssetKey;
     const body = request.body || {};
+    const forceOverride = (body as any).force === true;
     
     try {
+      // P5-FINAL: Check governance freeze
+      if (!forceOverride) {
+        try {
+          const { isGovernanceFrozen } = await import('../../health/model_health.service.js');
+          const freezeCheck = await isGovernanceFrozen(asset as any);
+          if (freezeCheck.frozen) {
+            return { 
+              ok: false, 
+              error: 'FROZEN_BY_HEALTH', 
+              reason: freezeCheck.reason,
+              hint: 'Use force=true to override (will be logged)'
+            };
+          }
+        } catch (e) {
+          // Health service not initialized yet - allow operation
+        }
+      } else {
+        console.log(`[Governance] FORCE OVERRIDE: config update for ${asset} despite health state`);
+      }
+      
       // Validate inputs
       if (body.windowLen !== undefined && (body.windowLen < 10 || body.windowLen > 365)) {
         return { ok: false, error: 'windowLen must be between 10 and 365' };
