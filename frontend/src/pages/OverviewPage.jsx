@@ -158,8 +158,8 @@ const VerdictBanner = ({ verdict, asset, horizon }) => {
         
         <div className="text-right">
           <Tooltip content="Model confidence based on signal clarity, data quality, and historical accuracy.">
-            <div className="text-sm text-gray-500 flex items-center gap-1 justify-end cursor-help">
-              Confidence <Info className="w-3 h-3" />
+            <div className="text-sm text-gray-500 cursor-help hover:text-gray-600 transition-colors">
+              Confidence
             </div>
           </Tooltip>
           <div className="text-2xl font-semibold text-gray-800">
@@ -304,42 +304,100 @@ const SignalStack = ({ indicators }) => {
   );
 };
 
-// F) PIPELINE SUMMARY — Signal flow
+// F) PIPELINE SUMMARY — Signal flow (Redesigned)
 const PipelineSummary = ({ pipeline, asset }) => {
   if (!pipeline) return null;
   
   const steps = [
-    { label: 'Indicators', value: `${Object.keys(pipeline.macroScore || {}).length > 0 ? '12' : '0'} series` },
-    { label: 'MacroScore', value: pipeline.macroScore?.score?.toFixed(2) || '0.00' },
-    { label: 'DXY Final', value: `${pipeline.dxyFinal?.projectionPct?.toFixed(1) || '0.0'}%` },
+    { 
+      label: 'Data Inputs', 
+      value: Object.keys(pipeline.macroScore || {}).length > 0 ? '12' : '0',
+      unit: 'indicators',
+      description: 'Macro economic time series feeding the model',
+      color: 'from-blue-500 to-blue-600'
+    },
+    { 
+      label: 'Macro Score', 
+      value: pipeline.macroScore?.score?.toFixed(2) || '0.00',
+      unit: 'z-score',
+      description: 'Composite macro environment signal',
+      color: 'from-purple-500 to-purple-600'
+    },
+    { 
+      label: 'DXY Impact', 
+      value: `${pipeline.dxyFinal?.projectionPct?.toFixed(1) || '0.0'}%`,
+      unit: 'weight',
+      description: 'Dollar strength influence on forecast',
+      color: 'from-emerald-500 to-emerald-600'
+    },
   ];
   
   if (asset !== 'dxy' && pipeline.spxOverlay) {
-    steps.push({ label: 'SPX Overlay', value: `${pipeline.spxOverlay.projectionPct?.toFixed(1) || '0.0'}%` });
+    steps.push({ 
+      label: 'S&P 500', 
+      value: `${pipeline.spxOverlay.projectionPct?.toFixed(1) || '0.0'}%`,
+      unit: 'correlation',
+      description: 'SPX cross-asset correlation factor',
+      color: 'from-amber-500 to-amber-600'
+    });
   }
   
   if (asset === 'btc' && pipeline.btcOverlay) {
-    steps.push({ label: 'BTC Overlay', value: `${pipeline.btcOverlay.projectionPct?.toFixed(1) || '0.0'}%` });
+    steps.push({ 
+      label: 'BTC Adjusted', 
+      value: `${pipeline.btcOverlay.projectionPct?.toFixed(1) || '0.0'}%`,
+      unit: 'final',
+      description: 'Final adjusted BTC forecast output',
+      color: 'from-orange-500 to-orange-600'
+    });
   }
   
   return (
-    <div className="p-4 bg-gray-50 rounded-lg" data-testid="pipeline-summary">
-      <div className="flex items-center gap-2 mb-3">
-        <ArrowRight className="w-4 h-4 text-gray-400" />
-        <span className="text-sm font-medium text-gray-600">Pipeline Flow</span>
+    <div className="w-full" data-testid="pipeline-summary">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center">
+          <ArrowRight className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-gray-800">Signal Pipeline</h3>
+          <p className="text-xs text-gray-500">Data flow from inputs to final forecast</p>
+        </div>
       </div>
       
-      <div className="flex items-center gap-2 overflow-x-auto">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {steps.map((step, idx) => (
-          <React.Fragment key={idx}>
-            <div className="flex-shrink-0 px-3 py-2 bg-white rounded border border-gray-200">
-              <div className="text-xs text-gray-400">{step.label}</div>
-              <div className="text-sm font-semibold text-gray-800">{step.value}</div>
+          <div 
+            key={idx}
+            className="group relative bg-white border border-gray-100 rounded-xl p-4 hover:border-gray-200 hover:shadow-sm transition-all duration-200"
+          >
+            {/* Progress indicator */}
+            <div className="absolute top-0 left-0 right-0 h-1 rounded-t-xl overflow-hidden">
+              <div className={`h-full w-full bg-gradient-to-r ${step.color} opacity-60`} />
             </div>
-            {idx < steps.length - 1 && (
-              <ArrowRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
-            )}
-          </React.Fragment>
+            
+            {/* Step number */}
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                Step {idx + 1}
+              </span>
+              {idx < steps.length - 1 && (
+                <ArrowRight className="w-3 h-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity hidden lg:block" />
+              )}
+            </div>
+            
+            {/* Content */}
+            <div className="text-xs font-medium text-gray-500 mb-1">{step.label}</div>
+            <div className="text-xl font-bold text-gray-900">{step.value}</div>
+            <div className="text-[10px] text-gray-400 mt-1">{step.unit}</div>
+            
+            {/* Hover tooltip */}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-10 pointer-events-none">
+              {step.description}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
+                <div className="border-4 border-transparent border-t-gray-900" />
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     </div>
