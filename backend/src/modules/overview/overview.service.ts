@@ -315,6 +315,7 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
       } else {
         console.warn(`[Overview] Snapshot for ${assetUpper}/${horizonDays}d has insufficient predicted points: ${predictedCount} < ${minPredicted}. Falling back to terminal.`);
       }
+      } // Close the asset match else block
     }
     
     // Fallback: If no snapshot exists, trigger terminal to create one
