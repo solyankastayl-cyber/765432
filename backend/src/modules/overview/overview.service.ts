@@ -313,7 +313,7 @@ async function fetchFractalTerminal(asset: Asset, focus: string): Promise<any> {
               projection: proj,
               rangeLow: proj - 0.05,
               rangeHigh: proj + 0.05,
-              confidence: confidence100,
+              confidence: Math.round(confidence100 * 100) / 100, // Format to 2 decimal places
             };
           });
           
