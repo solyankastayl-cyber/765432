@@ -63,6 +63,23 @@ API ключ для macro (FRED): 2c0bf55cfd182a3a4d2e4fd017a622f7
 - **BTC crossAsset required** - убран fallback на hybrid в overview.service.ts
 - SPX/DXY могут использовать hybrid fallback (допускается по спецификации)
 
+### Session 2 (2026-03-02) - Overview Data Source Fixes
+**Проблемы:**
+1. DXY и BTC запросы возвращали данные SPX (snapshot asset mismatch)
+2. SPX predicted=1 вместо ~90 (forecast.path содержал числа, а код ожидал объекты)
+3. Asset validation была case-sensitive ("DXY" не распознавался)
+
+**Исправления в overview.service.ts:**
+- Добавлена проверка `snapshotAsset !== assetUpper` для предотвращения использования чужого snapshot
+- Исправлен парсинг SPX forecast.path (теперь обрабатывает как числа, так и объекты)
+- Asset validation изменена на `asset.toLowerCase()` для case-insensitive сравнения
+- Добавлено debug-логирование в route handler
+
+**Результаты после исправления:**
+- SPX: actual=494, predicted=91 ✅
+- BTC: actual=729, predicted=91 ✅
+- DXY: actual=493, predicted=90 ✅
+
 ## Testing Results (2026-03-02)
 - Backend: 100% pass rate (7/7 endpoints)
 - Frontend: 100% pass rate (5/5 pages)
