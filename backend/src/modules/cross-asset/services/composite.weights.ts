@@ -105,36 +105,57 @@ export function calculateSmartWeights(inputs: WeightInputs): ComputedWeights {
       break;
   }
   
+  // Apply minimum floor to raw weights BEFORE normalization
+  const MIN_RAW = 0.01;
+  if (rawWeights.BTC < MIN_RAW) rawWeights.BTC = MIN_RAW;
+  if (rawWeights.SPX < MIN_RAW) rawWeights.SPX = MIN_RAW;
+  if (rawWeights.DXY < MIN_RAW) rawWeights.DXY = MIN_RAW;
+  
   // Normalize weights to sum to 1.0
   const sum = rawWeights.BTC + rawWeights.SPX + rawWeights.DXY;
   
-  // Bound weights BEFORE normalization to prevent extreme allocations
-  const MIN_WEIGHT = 0.05;
-  const MAX_WEIGHT = 0.90;
-  
-  let bounded = {
+  let finalWeights = {
     BTC: sum > 0 ? rawWeights.BTC / sum : 0.33,
     SPX: sum > 0 ? rawWeights.SPX / sum : 0.33,
     DXY: sum > 0 ? rawWeights.DXY / sum : 0.34,
   };
   
-  // Apply bounds
-  for (const key of ['BTC', 'SPX', 'DXY'] as const) {
-    if (bounded[key] < MIN_WEIGHT) {
-      bounded[key] = MIN_WEIGHT;
+  // Apply bounds [0.05, 0.90] using iterative clamping
+  // to ensure all weights stay within bounds after renormalization
+  const MIN_WEIGHT = 0.05;
+  const MAX_WEIGHT = 0.90;
+  const ITERATIONS = 3;
+  
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    let needsAdjust = false;
+    
+    // Clamp
+    for (const key of ['BTC', 'SPX', 'DXY'] as const) {
+      if (finalWeights[key] < MIN_WEIGHT) {
+        finalWeights[key] = MIN_WEIGHT;
+        needsAdjust = true;
+      }
+      if (finalWeights[key] > MAX_WEIGHT) {
+        finalWeights[key] = MAX_WEIGHT;
+        needsAdjust = true;
+      }
     }
-    if (bounded[key] > MAX_WEIGHT) {
-      bounded[key] = MAX_WEIGHT;
-    }
+    
+    if (!needsAdjust) break;
+    
+    // Renormalize
+    const newSum = finalWeights.BTC + finalWeights.SPX + finalWeights.DXY;
+    finalWeights.BTC /= newSum;
+    finalWeights.SPX /= newSum;
+    finalWeights.DXY /= newSum;
   }
   
-  // Re-normalize after bounding to ensure sum = 1.0
-  const newSum = bounded.BTC + bounded.SPX + bounded.DXY;
-  const finalWeights = {
-    BTC: bounded.BTC / newSum,
-    SPX: bounded.SPX / newSum,
-    DXY: bounded.DXY / newSum,
-  };
+  // Final enforcement: if still out of bounds after iterations, force to bounds
+  // and accept slightly off sum (better than violating bounds)
+  for (const key of ['BTC', 'SPX', 'DXY'] as const) {
+    if (finalWeights[key] < MIN_WEIGHT) finalWeights[key] = MIN_WEIGHT;
+    if (finalWeights[key] > MAX_WEIGHT) finalWeights[key] = MAX_WEIGHT;
+  }
   
   return {
     BTC: Math.round(finalWeights.BTC * 10000) / 10000,

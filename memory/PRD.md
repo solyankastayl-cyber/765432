@@ -3,73 +3,77 @@
 ## Original Problem Statement
 Развёртывание Fractal Platform из GitHub репозитория https://github.com/solyankastayl-cyber/345678trew
 P3-A: SPX Lifecycle Integration
-P3-B: DXY Lifecycle Integration
+P3-B: DXY Lifecycle Integration  
+P4: Cross-Asset Composite Lifecycle
 Governance Standard согласно PRD v2.0
 
 ## Architecture
 - **Backend**: TypeScript (Fastify) на порту 8002, проксируется через Python FastAPI на порту 8001
 - **Frontend**: React с TailwindCSS на порту 3000
 - **Database**: MongoDB (fractal_platform)
-- **Key Collections**: model_config, model_lifecycle_state, model_lifecycle_events, prediction_snapshots, decision_outcomes
+- **Key Collections**: model_config, model_lifecycle_state, model_lifecycle_events, prediction_snapshots, composite_snapshots, decision_outcomes
 
-## User Personas
-1. **Trader** - Использует прогнозы для торговых решений
-2. **Analyst** - Изучает исторические паттерны и точность модели
-3. **Admin** - Управляет системой через Admin Panel и Governance
-
-## Core Requirements (Static)
-1. PRD v2.0 Governance Standard
-2. Lifecycle: Version → Snapshot → Resolve → Outcome → Drift
-3. Runtime-configurable engine параметры через MongoDB
-4. Version isolation для snapshots и outcomes
+## Core Requirements (PRD v2.0 Governance Standard)
+1. Lifecycle: Version → Snapshot → Resolve → Outcome → Drift
+2. Runtime-configurable engine параметры через MongoDB
+3. Version isolation для snapshots и outcomes
+4. Composite = deterministic blend от parent versions
 
 ## What's Been Implemented
 
-### Session 1 (2026-03-02) - Full Deployment
+### Session 1 - Full Deployment
 - Склонирован репозиторий, установлены зависимости
-- Все сервисы запущены (backend, frontend, MongoDB)
 - BTC/SPX/DXY страницы работают
 - Testing: 100% pass rate
 
-### Session 2 (2026-03-02) - P3-A SPX Lifecycle
-- Добавлены SPX-специфичные параметры в ModelConfigDoc:
-  - consensusThreshold (default: 0.05)
-  - divergencePenalty (default: 0.85)
-- Runtime-config интеграция в spx-focus-pack.builder.ts
-- SPX focus-pack теперь читает windowLen/topK из MongoDB
-- SPX consensus service поддерживает runtime threshold
-- Promote создаёт версии для SPX
-- Testing: 100% pass rate (5/5 SPX tests)
+### Session 2 - P3-A SPX Lifecycle
+- Runtime-configurable: windowLen, topK, consensusThreshold, divergencePenalty
+- SPX focus-pack читает config из MongoDB (configSource: "mongo")
+- Testing: 100% pass rate
 
-### Session 2 (2026-03-02) - P3-B DXY Lifecycle  
-- Добавлены DXY-специфичные параметры:
-  - syntheticWeight (default: 0.4)
-  - replayWeight (default: 0.4)
-  - macroWeight (default: 0.2)
-- DXY promote создаёт версии
-- DXY terminal возвращает synthetic path
-- Testing: 100% pass rate (3/3 DXY tests)
+### Session 2 - P3-B DXY Lifecycle  
+- Runtime-configurable: syntheticWeight, replayWeight, macroWeight
+- DXY terminal возвращает synthetic path с bands
+- Testing: 100% pass rate
 
-## API Endpoints (P3)
+### Session 3 - P4 Cross-Asset Composite Lifecycle
+- **Smart Composite** с vol-adjusted weights и confidence weighting
+- Composite = f(BTC version, SPX version, DXY version)
+- **parentVersions** immutable после создания
+- **Weights bounded** [0.05, 0.90] с iterative clamping
+- Vol penalties применяются (высокая volatility → меньший вес)
+- Confidence factors применяются
+- Audit invariants проверяет корректность composite
 
-### Model Config
-- `POST /api/fractal/v2.1/admin/governance/model-config` - Update config (accepts asset in body)
-- `GET /api/fractal/v2.1/admin/governance/model-config?asset=X` - Get config
-- `GET /api/fractal/v2.1/admin/governance/runtime-debug?asset=X` - Debug info
+## API Endpoints (P4 Cross-Asset)
 
-### Lifecycle
-- `POST /api/fractal/v2.1/admin/lifecycle/promote` - Create version + snapshots
-- `POST /api/fractal/v2.1/admin/lifecycle/resolve` - Resolve snapshots → outcomes
-- `POST /api/fractal/v2.1/admin/lifecycle/rollback` - Rollback to previous version
-- `GET /api/fractal/v2.1/admin/lifecycle/status?asset=X` - Get lifecycle state
+### Composite Lifecycle
+- `POST /api/cross-asset/admin/lifecycle/promote` - Create composite version
+- `POST /api/cross-asset/admin/lifecycle/rollback` - Rollback to previous
+- `GET /api/cross-asset/admin/lifecycle/status` - Lifecycle status
 
-### Public Endpoints
-- `GET /api/spx/v2.1/focus-pack?horizon=X` - SPX focus pack (runtime config aware)
-- `GET /api/fractal/dxy/terminal?focus=X` - DXY terminal (runtime config aware)
+### Composite Data  
+- `GET /api/cross-asset/snapshot` - Get composite forecast
+- `GET /api/cross-asset/config` - Default blend config
+
+### Audit
+- `GET /api/cross-asset/admin/audit/invariants` - Validate composite invariants
+
+## Composite Smart Weights Formula
+
+```
+rawWeight_a = baseWeight_a * volPenalty_a * confFactor_a
+
+volPenalty_a = 1 / (1 + (sigma_a / sigma_ref)^p)
+confFactor_a = clip(0.15 + 0.85 * confidence_a)
+
+finalWeight_a = normalize(rawWeight_a) with bounds [0.05, 0.90]
+```
 
 ## Smoke Test Scripts
-- `/app/scripts/p3_spx_lifecycle_smoke.sh` - SPX lifecycle test
-- `/app/scripts/p3_dxy_lifecycle_smoke.sh` - DXY lifecycle test
+- `/app/scripts/p3_spx_lifecycle_smoke.sh`
+- `/app/scripts/p3_dxy_lifecycle_smoke.sh`
+- `/app/scripts/p4_cross_asset_lifecycle_smoke.sh`
 
 ## Prioritized Backlog
 
@@ -77,25 +81,24 @@ Governance Standard согласно PRD v2.0
 - [x] Развёртывание проекта
 - [x] P3-A SPX Lifecycle Integration
 - [x] P3-B DXY Lifecycle Integration
+- [x] P4 Cross-Asset Composite Lifecycle
 
 ### P1 (High Priority) - Next Phase
-- [ ] P4: Cross-Asset Composite Governance
-  - parentVersionIds
-  - composite snapshot
-  - composite resolve
-  - portfolio drift
-- [ ] Governance UI в Admin Panel
+- [ ] Governance UI в Admin Panel для управления blend config
+- [ ] Composite resolve service (outcomes)
+- [ ] Cross-asset drift calculation
 
 ### P2 (Medium Priority)
-- [ ] Snapshot comparison
-- [ ] Divergence tracking
+- [ ] Snapshot comparison view
 - [ ] Attribution dashboard
+- [ ] Performance visualization
 
 ### P3 (Nice to Have)
 - [ ] Export functionality
 - [ ] Alert system integration
+- [ ] Historical composite replay
 
 ## Next Tasks
-1. P4: Cross-Asset Lifecycle (BTC+SPX+DXY)
-2. Admin Panel Governance UI
-3. Drift/Attribution visualization
+1. Admin Panel UI для Composite governance (blend weights)
+2. Composite resolve для outcomes
+3. Cross-asset drift/attribution visualization
