@@ -691,16 +691,22 @@ export async function registerOverviewRoutes(app: FastifyInstance): Promise<void
   app.get('/api/ui/overview', async (request: FastifyRequest, reply: FastifyReply) => {
     const { asset = 'spx', horizon = '90' } = request.query as { asset?: string; horizon?: string };
     
+    console.log(`[Overview Route] Received request: asset=${asset}, horizon=${horizon}`);
+    
     const validAssets: Asset[] = ['dxy', 'spx', 'btc'];
     const validHorizons = [7, 14, 30, 90, 180, 365];
     
-    const assetParsed = validAssets.includes(asset as Asset) ? asset as Asset : 'spx';
+    const assetParsed = validAssets.includes(asset.toLowerCase() as Asset) ? asset.toLowerCase() as Asset : 'spx';
     const horizonParsed = validHorizons.includes(parseInt(horizon)) ? parseInt(horizon) : 90;
+    
+    console.log(`[Overview Route] Parsed: asset=${assetParsed}, horizon=${horizonParsed}`);
     
     try {
       const start = Date.now();
       const pack = await buildOverviewPack(assetParsed, horizonParsed);
       const latency = Date.now() - start;
+      
+      console.log(`[Overview Route] Response asset: ${pack.asset}`);
       
       return reply.send({
         ok: true,
