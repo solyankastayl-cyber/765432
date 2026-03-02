@@ -697,6 +697,14 @@ async function main() {
   console.log('[Fractal] ✅ Horizon Meta registered at /api/fractal/horizon-meta/*');
   
   // ═══════════════════════════════════════════════════════════════
+  // P4: CROSS-ASSET COMPOSITE LIFECYCLE
+  // ═══════════════════════════════════════════════════════════════
+  console.log('[Fractal] Registering Cross-Asset Composite Lifecycle (P4)...');
+  const { compositeLifecycleRoutes } = await import('./modules/cross-asset/index.js');
+  await compositeLifecycleRoutes(app);
+  console.log('[Fractal] ✅ Cross-Asset registered at /api/cross-asset/*');
+  
+  // ═══════════════════════════════════════════════════════════════
   // BTC OVERLAY — SPX → BTC Influence Engine (BLOCK 78)
   // ═══════════════════════════════════════════════════════════════
   console.log('[Fractal] Registering BTC Overlay (SPX → BTC Influence)...');
