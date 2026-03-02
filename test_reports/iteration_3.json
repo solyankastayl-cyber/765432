@@ -1,0 +1,63 @@
+{
+  "summary": "Completed comprehensive testing of V1 LOCKED requirements for Fractal Platform. All backend APIs pass (20/20 tests), all frontend pages load correctly with proper data visualization for SPX, BTC, and DXY assets.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "All pages",
+        "issues": ["WebSocket connection repeatedly failing (WS_ENABLED=false) - causes console spam but doesn't affect functionality"]
+      }
+    ]
+  },
+  "passed_tests": [
+    "V1 Audit: 100% pass rate (10/10 checks)",
+    "V1 Audit: All individual checks pass (history_start, anchor_lock, btc_crossasset, forecast_length)",
+    "GET /api/ui/overview?asset=spx - Returns correct SPX data (actual=494, predicted=91)",
+    "GET /api/ui/overview?asset=btc - Returns correct BTC data (actual=61, predicted=90)",
+    "GET /api/ui/overview?asset=dxy - Returns correct DXY data (actual=35, predicted=81)",
+    "SPX overview has verdict with stance in [BULLISH, BEARISH, HOLD]",
+    "BTC crossAsset snapshot exists (V1 LOCKED requirement)",
+    "DXY values in correct range (80-150, not SPX 5000+ range)",
+    "POST /api/ui/generate-btc-crossasset - Generates valid snapshot",
+    "POST /api/ui/generate-dxy-snapshot - Generates valid snapshot",
+    "History start dates correct: BTC=2026-01-01, SPX=2026-01-02, DXY=2026-01-02",
+    "Anchor lock verified for all assets (anchorDate matches asOfDate)",
+    "GET /api/health - Returns ok status with ts_backend active",
+    "Frontend BTC Fractal page (/) - NEUTRAL stance, Expected Outcomes, Risk analysis",
+    "Frontend SPX page (/fractal/spx) - BULLISH SPX +2.41% with Hybrid/Cross-Asset modes",
+    "Frontend DXY page (/dxy) - BEARISH USD -5.77% with Macro overlay",
+    "Frontend Overview page - Asset tabs (S&P 500, Bitcoin, Dollar), horizon selectors working",
+    "Frontend Overview BTC - Shows BULLISH 90% with proper chart",
+    "Frontend Overview DXY - Shows BEARISH 50% with correct DXY range values"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_v1_locked_overview.py",
+    "/app/test_reports/pytest/pytest_results_v1.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "WebSocket connection failing repeatedly - WS_ENABLED=false but frontend still attempts connections. Consider disabling WS client in frontend when not needed to reduce console noise."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v1_locked_overview.py"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 pytest tests)",
+    "frontend": "100% (5/5 pages loading correctly)"
+  },
+  "seed_data_creation": "None - existing snapshots used",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All V1 LOCKED requirements verified: BTC crossAsset snapshots exist, history starts from 2026-01-01, anchor lock working. Test file at /app/backend/tests/test_v1_locked_overview.py covers all V1 audit checks.",
+  "v1_locked_status": {
+    "history_start_2026_01_01": "PASS - BTC starts 2026-01-01, SPX/DXY start 2026-01-02 (market holiday)",
+    "btc_crossasset_required": "PASS - crossAsset snapshot exists",
+    "overview_readonly_snapshots": "PASS - Overview reads from prediction_snapshots",
+    "anchor_lock": "PASS - anchorDate matches asOfDate for all assets"
+  }
+}

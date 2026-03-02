@@ -482,8 +482,21 @@ const LoadingSkeleton = () => (
 // ═══════════════════════════════════════════════════════════════
 
 export default function OverviewPage() {
-  const [asset, setAsset] = useState('spx');
-  const [horizon, setHorizon] = useState(90);
+  // Read initial asset from URL params
+  const getInitialAsset = () => {
+    const params = new URLSearchParams(window.location.search);
+    const urlAsset = params.get('asset')?.toLowerCase();
+    return ['spx', 'btc', 'dxy'].includes(urlAsset) ? urlAsset : 'spx';
+  };
+  
+  const getInitialHorizon = () => {
+    const params = new URLSearchParams(window.location.search);
+    const h = parseInt(params.get('horizon'));
+    return [7, 14, 30, 90, 180, 365].includes(h) ? h : 90;
+  };
+
+  const [asset, setAsset] = useState(getInitialAsset);
+  const [horizon, setHorizon] = useState(getInitialHorizon);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

@@ -819,6 +819,448 @@ export async function registerOverviewRoutes(app: FastifyInstance): Promise<void
   
   console.log('[Overview] UI Overview registered at /api/ui/overview');
   console.log('[Overview] Full candles registered at /api/ui/candles');
+  
+  // ═══════════════════════════════════════════════════════════════
+  // V1 LOCKED: BTC CROSS-ASSET SNAPSHOT GENERATOR
+  // Generates and saves crossAsset snapshots for BTC (no fallback)
+  // ═══════════════════════════════════════════════════════════════
+  
+  app.post('/api/ui/generate-btc-crossasset', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { horizon = '90' } = request.query as { horizon?: string };
+    const horizonDays = parseInt(horizon) || 90;
+    
+    try {
+      const db = getDb();
+      console.log(`[V1 LOCKED] Generating BTC crossAsset snapshot for ${horizonDays}d...`);
+      
+      // 1. Fetch BTC focus-pack in crossAsset mode
+      const focusRes = await fetch(
+        `http://localhost:8002/api/fractal/v2.1/focus-pack?symbol=BTC&focus=${horizonDays}d&mode=crossAsset`
+      );
+      const focusData = await focusRes.json();
+      
+      if (!focusData.focusPack?.forecast?.path?.length) {
+        return reply.status(400).send({
+          ok: false,
+          error: 'BTC focus-pack returned no forecast path'
+        });
+      }
+      
+      const focusPack = focusData.focusPack;
+      const forecast = focusPack.forecast;
+      
+      // 2. Fetch BTC candles for full history
+      const candlesRes = await fetch(`http://localhost:8002/api/ui/candles?asset=BTC&years=2`);
+      const candlesData = await candlesRes.json();
+      const candles = candlesData.candles || [];
+      
+      if (candles.length < 60) {
+        return reply.status(400).send({
+          ok: false,
+          error: `Insufficient BTC candles: ${candles.length}`
+        });
+      }
+      
+      // 3. Build series [history] -> anchor -> [forecast]
+      const FIXED_HISTORY_START = '2026-01-01';
+      const asOfDate = new Date().toISOString().split('T')[0];
+      const asOfPrice = forecast.currentPrice || candles[candles.length - 1]?.c || 0;
+      
+      // History: from FIXED_HISTORY_START to yesterday
+      const history: Array<{t: string, v: number}> = candles
+        .filter((c: any) => c.t >= FIXED_HISTORY_START && c.t < asOfDate)
+        .map((c: any) => ({ t: c.t, v: c.c }));
+      
+      // Forecast: from tomorrow onwards
+      const forecastSeries: Array<{t: string, v: number}> = [];
+      const startTs = forecast.startTs ? new Date(forecast.startTs) : new Date();
+      
+      for (let i = 0; i < forecast.path.length; i++) {
+        const d = new Date(startTs);
+        d.setDate(d.getDate() + i);
+        const dateStr = d.toISOString().split('T')[0];
+        
+        if (dateStr > asOfDate) {
+          forecastSeries.push({ t: dateStr, v: forecast.path[i] });
+        }
+      }
+      
+      // Full series: history + anchor + forecast
+      const series = [
+        ...history,
+        { t: asOfDate, v: asOfPrice },
+        ...forecastSeries
+      ].sort((a, b) => a.t.localeCompare(b.t));
+      
+      // Calculate anchor index
+      const anchorIndex = series.findIndex(p => p.t === asOfDate);
+      
+      // 4. Derive stance
+      const anchorPrice = series[anchorIndex]?.v || asOfPrice;
+      const finalPrice = series[series.length - 1]?.v || asOfPrice;
+      const returnPct = (finalPrice - anchorPrice) / anchorPrice;
+      const stance = returnPct > 0.02 ? 'BULLISH' : returnPct < -0.02 ? 'BEARISH' : 'HOLD';
+      
+      // 5. Save snapshot
+      const snapshot = {
+        asset: 'BTC',
+        view: 'crossAsset',
+        horizonDays,
+        asOf: new Date().toISOString(),
+        asOfPrice,
+        series,
+        anchorIndex,
+        metadata: {
+          stance,
+          confidence: focusPack.diagnostics?.qualityScore || 0.5,
+          modelVersion: 'v3.2.0-crossAsset',
+        },
+        createdAt: new Date().toISOString(),
+      };
+      
+      await db.collection('prediction_snapshots').insertOne(snapshot);
+      
+      console.log(`[V1 LOCKED] ✅ BTC crossAsset snapshot saved: series=${series.length}, anchor=${anchorIndex}, stance=${stance}`);
+      
+      return reply.send({
+        ok: true,
+        message: `BTC crossAsset snapshot generated for ${horizonDays}d`,
+        snapshot: {
+          asset: 'BTC',
+          view: 'crossAsset',
+          horizonDays,
+          seriesLength: series.length,
+          anchorIndex,
+          historyLength: anchorIndex,
+          forecastLength: series.length - anchorIndex - 1,
+          stance,
+          asOfPrice,
+        }
+      });
+    } catch (e: any) {
+      console.error('[V1 LOCKED] BTC crossAsset generation failed:', e.message);
+      return reply.status(500).send({
+        ok: false,
+        error: e.message
+      });
+    }
+  });
+  
+  console.log('[Overview] BTC crossAsset generator registered at POST /api/ui/generate-btc-crossasset');
+  
+  // ═══════════════════════════════════════════════════════════════
+  // V1 LOCKED: DXY SNAPSHOT GENERATOR
+  // Generates and saves hybrid snapshots for DXY
+  // ═══════════════════════════════════════════════════════════════
+  
+  app.post('/api/ui/generate-dxy-snapshot', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { horizon = '90' } = request.query as { horizon?: string };
+    const horizonDays = parseInt(horizon) || 90;
+    
+    try {
+      const db = getDb();
+      console.log(`[V1 LOCKED] Generating DXY hybrid snapshot for ${horizonDays}d...`);
+      
+      // 1. Fetch DXY terminal
+      const terminalRes = await fetch(
+        `http://localhost:8002/api/fractal/dxy/terminal?focus=${horizonDays}d`
+      );
+      const terminalData = await terminalRes.json();
+      
+      if (!terminalData.hybrid?.path?.length) {
+        return reply.status(400).send({
+          ok: false,
+          error: 'DXY terminal returned no hybrid path'
+        });
+      }
+      
+      // 2. Fetch DXY candles for full history
+      const candlesRes = await fetch(`http://localhost:8002/api/ui/candles?asset=DXY&years=2`);
+      const candlesData = await candlesRes.json();
+      const candles = candlesData.candles || [];
+      
+      if (candles.length < 60) {
+        return reply.status(400).send({
+          ok: false,
+          error: `Insufficient DXY candles: ${candles.length}`
+        });
+      }
+      
+      // 3. Build series
+      const FIXED_HISTORY_START = '2026-01-01';
+      const asOfDate = new Date().toISOString().split('T')[0];
+      const asOfPrice = terminalData.core?.current?.price || candles[candles.length - 1]?.c || 0;
+      
+      // History
+      const history: Array<{t: string, v: number}> = candles
+        .filter((c: any) => c.t >= FIXED_HISTORY_START && c.t < asOfDate)
+        .map((c: any) => ({ t: c.t, v: c.c }));
+      
+      // Forecast from hybrid.path
+      const forecastSeries: Array<{t: string, v: number}> = [];
+      for (const p of terminalData.hybrid.path) {
+        const dateStr = p.date?.split('T')[0];
+        if (dateStr && dateStr > asOfDate) {
+          forecastSeries.push({ t: dateStr, v: p.value });
+        }
+      }
+      
+      // Full series
+      const series = [
+        ...history,
+        { t: asOfDate, v: asOfPrice },
+        ...forecastSeries
+      ].sort((a, b) => a.t.localeCompare(b.t));
+      
+      const anchorIndex = series.findIndex(p => p.t === asOfDate);
+      
+      // Derive stance
+      const anchorPrice = series[anchorIndex]?.v || asOfPrice;
+      const finalPrice = series[series.length - 1]?.v || asOfPrice;
+      const returnPct = (finalPrice - anchorPrice) / anchorPrice;
+      const stance = returnPct > 0.02 ? 'BULLISH' : returnPct < -0.02 ? 'BEARISH' : 'HOLD';
+      
+      // Save snapshot
+      const snapshot = {
+        asset: 'DXY',
+        view: 'hybrid',
+        horizonDays,
+        asOf: new Date().toISOString(),
+        asOfPrice,
+        series,
+        anchorIndex,
+        metadata: {
+          stance,
+          confidence: terminalData.meta?.confidence || 0.5,
+          modelVersion: 'v3.2.0-hybrid',
+        },
+        createdAt: new Date().toISOString(),
+      };
+      
+      await db.collection('prediction_snapshots').insertOne(snapshot);
+      
+      console.log(`[V1 LOCKED] ✅ DXY hybrid snapshot saved: series=${series.length}, anchor=${anchorIndex}, stance=${stance}`);
+      
+      return reply.send({
+        ok: true,
+        message: `DXY hybrid snapshot generated for ${horizonDays}d`,
+        snapshot: {
+          asset: 'DXY',
+          view: 'hybrid',
+          horizonDays,
+          seriesLength: series.length,
+          anchorIndex,
+          historyLength: anchorIndex,
+          forecastLength: series.length - anchorIndex - 1,
+          stance,
+          asOfPrice,
+        }
+      });
+    } catch (e: any) {
+      console.error('[V1 LOCKED] DXY snapshot generation failed:', e.message);
+      return reply.status(500).send({
+        ok: false,
+        error: e.message
+      });
+    }
+  });
+  
+  console.log('[Overview] DXY snapshot generator registered at POST /api/ui/generate-dxy-snapshot');
+  
+  // ═══════════════════════════════════════════════════════════════
+  // V1 LOCKED: AUDIT ENDPOINT
+  // Programmatic validation of all V1 LOCKED invariants
+  // ═══════════════════════════════════════════════════════════════
+  
+  app.get('/api/audit/v1-check', async (request: FastifyRequest, reply: FastifyReply) => {
+    const FIXED_HISTORY_START = '2026-01-01';
+    const results: any = {
+      timestamp: new Date().toISOString(),
+      checks: [],
+      summary: {
+        total: 0,
+        passed: 0,
+        failed: 0,
+        grade: 'UNKNOWN'
+      }
+    };
+    
+    try {
+      const db = getDb();
+      
+      // ═══════════════════════════════════════════════════════════
+      // CHECK 1: History Start Date (all assets should start from 2026-01-01 or first trading day)
+      // Note: SPX may start from 2026-01-02 (Jan 1 is market holiday)
+      // ═══════════════════════════════════════════════════════════
+      for (const asset of ['BTC', 'SPX', 'DXY']) {
+        const snapshots = await db.collection('prediction_snapshots')
+          .find({ asset })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .toArray();
+        
+        const check: any = {
+          name: `HISTORY_START_${asset}`,
+          asset,
+          expected: FIXED_HISTORY_START,
+          passed: false,
+          details: ''
+        };
+        
+        if (snapshots.length === 0) {
+          check.details = 'No snapshot found';
+          check.passed = false;
+        } else {
+          const series = snapshots[0].series || [];
+          const firstDate = series[0]?.t || '';
+          check.actual = firstDate;
+          
+          // Allow 2026-01-02 for SPX and DXY (Jan 1 is often market holiday)
+          const validStarts = ['BTC'].includes(asset)
+            ? [FIXED_HISTORY_START] 
+            : [FIXED_HISTORY_START, '2026-01-02'];
+          
+          check.passed = validStarts.includes(firstDate);
+          check.details = check.passed 
+            ? `History starts at ${firstDate} (valid)` 
+            : `History starts at ${firstDate}, expected ${validStarts.join(' or ')}`;
+        }
+        
+        results.checks.push(check);
+      }
+      
+      // ═══════════════════════════════════════════════════════════
+      // CHECK 2: Anchor Lock (anchorTime == lastCandleTime)
+      // ═══════════════════════════════════════════════════════════
+      for (const asset of ['BTC', 'SPX', 'DXY']) {
+        const snapshots = await db.collection('prediction_snapshots')
+          .find({ asset })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .toArray();
+        
+        const check: any = {
+          name: `ANCHOR_LOCK_${asset}`,
+          asset,
+          passed: false,
+          details: ''
+        };
+        
+        if (snapshots.length === 0) {
+          check.details = 'No snapshot found';
+        } else {
+          const snapshot = snapshots[0];
+          const series = snapshot.series || [];
+          const anchorIndex = snapshot.anchorIndex;
+          const anchorDate = series[anchorIndex]?.t;
+          const asOfDate = snapshot.asOf?.split('T')[0];
+          
+          check.anchorIndex = anchorIndex;
+          check.anchorDate = anchorDate;
+          check.asOfDate = asOfDate;
+          
+          // Check if anchor date is close to asOf (within 1 day tolerance)
+          if (anchorDate && asOfDate) {
+            const diff = Math.abs(new Date(anchorDate).getTime() - new Date(asOfDate).getTime());
+            const daysDiff = diff / (1000 * 60 * 60 * 24);
+            check.passed = daysDiff <= 1;
+            check.details = check.passed 
+              ? `Anchor synced at ${anchorDate}`
+              : `Anchor mismatch: anchor=${anchorDate}, asOf=${asOfDate}`;
+          } else {
+            check.details = 'Missing anchor or asOf date';
+          }
+        }
+        
+        results.checks.push(check);
+      }
+      
+      // ═══════════════════════════════════════════════════════════
+      // CHECK 3: BTC Consistency (crossAsset required, no hybrid fallback)
+      // ═══════════════════════════════════════════════════════════
+      const btcCrossAsset = await db.collection('prediction_snapshots')
+        .findOne({ asset: 'BTC', view: 'crossAsset' }, { sort: { createdAt: -1 } });
+      
+      const btcConsistencyCheck: any = {
+        name: 'BTC_CROSSASSET_REQUIRED',
+        asset: 'BTC',
+        expected: 'crossAsset view snapshot must exist',
+        passed: !!btcCrossAsset,
+        details: btcCrossAsset 
+          ? `crossAsset snapshot found (created: ${btcCrossAsset.createdAt})`
+          : 'NO crossAsset snapshot - V1 LOCKED VIOLATION'
+      };
+      results.checks.push(btcConsistencyCheck);
+      
+      // ═══════════════════════════════════════════════════════════
+      // CHECK 4: Forecast Length (should have >= 50% of horizon days)
+      // ═══════════════════════════════════════════════════════════
+      for (const asset of ['BTC', 'SPX', 'DXY']) {
+        const snapshots = await db.collection('prediction_snapshots')
+          .find({ asset })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .toArray();
+        
+        const check: any = {
+          name: `FORECAST_LENGTH_${asset}`,
+          asset,
+          passed: false,
+          details: ''
+        };
+        
+        if (snapshots.length === 0) {
+          check.details = 'No snapshot found';
+        } else {
+          const snapshot = snapshots[0];
+          const series = snapshot.series || [];
+          const anchorIndex = snapshot.anchorIndex || 0;
+          const horizonDays = snapshot.horizonDays || 90;
+          const forecastLength = series.length - anchorIndex - 1;
+          const minRequired = Math.floor(horizonDays * 0.5);
+          
+          check.forecastLength = forecastLength;
+          check.horizonDays = horizonDays;
+          check.minRequired = minRequired;
+          check.passed = forecastLength >= minRequired;
+          check.details = check.passed
+            ? `Forecast has ${forecastLength} points (>= ${minRequired} required)`
+            : `Forecast too short: ${forecastLength} < ${minRequired} required`;
+        }
+        
+        results.checks.push(check);
+      }
+      
+      // ═══════════════════════════════════════════════════════════
+      // SUMMARY
+      // ═══════════════════════════════════════════════════════════
+      const total = results.checks.length;
+      const passed = results.checks.filter((c: any) => c.passed).length;
+      const failed = total - passed;
+      const passRate = total > 0 ? passed / total : 0;
+      
+      results.summary = {
+        total,
+        passed,
+        failed,
+        passRate: Math.round(passRate * 100),
+        grade: passRate >= 0.9 ? 'A' : passRate >= 0.7 ? 'B' : passRate >= 0.5 ? 'C' : 'D',
+        status: passRate === 1 ? 'ALL_PASS' : passRate >= 0.7 ? 'MOSTLY_PASS' : 'NEEDS_ATTENTION'
+      };
+      
+      return reply.send({
+        ok: true,
+        ...results
+      });
+    } catch (e: any) {
+      return reply.status(500).send({
+        ok: false,
+        error: e.message
+      });
+    }
+  });
+  
+  console.log('[Overview] V1 LOCKED Audit registered at GET /api/audit/v1-check');
 }
 
 export default registerOverviewRoutes;

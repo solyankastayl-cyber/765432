@@ -336,7 +336,51 @@ export const LivePredictionChart = ({
           (a, b) => isoToUnixSeconds(a.asOf) - isoToUnixSeconds(b.asOf)
         );
         
-        const activeSnapshot = sortedSnapshots.at(-1);
+        let activeSnapshot = sortedSnapshots.at(-1);
+        
+        // FALLBACK: If no snapshots available, fetch from /api/ui/overview
+        if (!activeSnapshot || !activeSnapshot.series) {
+          console.log(`[LiveChart] No snapshots for ${asset}/${view}/${horizonDays}d, falling back to overview`);
+          try {
+            const overviewRes = await fetch(`${API_URL}/api/ui/overview?asset=${asset}&horizon=${horizonDays}`);
+            const overviewData = await overviewRes.json();
+            
+            if (overviewData.ok && overviewData.charts) {
+              // Build series from overview charts (actual + predicted)
+              const actualSeries = (overviewData.charts.actual || []).map(p => ({
+                t: p.t,
+                v: p.v
+              }));
+              const predictedSeries = (overviewData.charts.predicted || []).map(p => ({
+                t: p.t,
+                v: p.v
+              }));
+              
+              // Combine: full actual + predicted (excluding duplicate anchor)
+              const combinedSeries = [...actualSeries];
+              if (predictedSeries.length > 0) {
+                // Skip first predicted if it matches last actual
+                const startIdx = actualSeries.length > 0 && 
+                  predictedSeries[0]?.t === actualSeries[actualSeries.length - 1]?.t ? 1 : 0;
+                combinedSeries.push(...predictedSeries.slice(startIdx));
+              }
+              
+              activeSnapshot = {
+                series: combinedSeries,
+                metadata: {
+                  stance: overviewData.verdict?.stance || 'HOLD',
+                  confidence: (overviewData.verdict?.confidencePct || 50) / 100
+                },
+                asOf: overviewData.asOf,
+                _source: 'overview_fallback'
+              };
+              
+              console.log(`[LiveChart] Overview fallback loaded: ${combinedSeries.length} points`);
+            }
+          } catch (e) {
+            console.error('[LiveChart] Overview fallback error:', e);
+          }
+        }
         
         // Set active prediction
         if (activeSnapshot?.series) {
